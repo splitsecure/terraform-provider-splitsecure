@@ -1,0 +1,58 @@
+syntax = "proto3";
+package splitsecure.hybridkeyset.v1;
+
+import "splitsecure/keys/v1/spec.proto";
+
+message HybridKeySet {
+  repeated KeyInfo keys = 1;
+}
+
+message KeyInfo {
+  bytes hash = 1;
+  keys.v1.Spec public_key_spec = 2;
+  uint32 default_digest_algorithm = 3;
+}
+
+message DetachedKey {
+  uint32 index = 1;
+  bytes key = 2;
+}
+
+message HybridKeySetWithDetachedKeys {
+  // hybrid_key_set holds a serialized HybridKeySet
+  bytes hybrid_key_set = 1;
+  repeated DetachedKey keys = 2;
+}
+
+message Signature {
+  // keys_bitfield has a high bit for each key that was used to generate this signature
+  // this field is authenticated by the signature itself in order to prevent
+  // the removal of a signature.
+  // The only issue that this faces is: if it becomes possible to generate a signature
+  // by only knowing a public key, the adversary can remove all other signatures
+  // and provide a bitfield with only keys of the broken algo.
+  // In order to paliate thi issue, the signature verification process returns
+  // the list of keys that have been used to verify and should expect a minimal set of algos.
+  // In the name of flexibility, the receiver could specify that it expects `n`` different
+  // signatures schemes of at least `b` level of security.
+  // This is up to the verifier.
+  uint32 keys_bitfield = 1;
+
+  // signatures contains the signatures for each key specified in the bitfield.
+  // They are ordered from LSB to MSB based on the order of appearance in `keys_bitfield`.
+  repeated bytes signatures = 2;
+}
+
+// ExchangeEphemeralCiphertext contains one matching entry for each public exchange key provided by the initiator
+// Those entries are:
+// - for Diffie-Hellman: a public key
+// - for Key Encapsulation Mechanism (KEM): a ciphertext / encapsulated key
+//
+// An entry index is meant to map to the index of an exchange key provided in the initiator's keyset.
+message ExchangeEphemeralCiphertext {
+  repeated Entry ciphertexts = 1;
+  message Entry {
+    uint32 index = 1;
+    bytes key = 2;
+  }
+}

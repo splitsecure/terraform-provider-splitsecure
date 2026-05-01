@@ -1,0 +1,8 @@
+syntax = "proto3";
+package splitsecure.requestsigning.v1;
+
+// Stub: SA callers never populate this field.
+// Avoids syncing the full delegation graph / attestation / keys dependency tree.
+message SignedRequest {
+  bytes requestor_id = 1;
+}

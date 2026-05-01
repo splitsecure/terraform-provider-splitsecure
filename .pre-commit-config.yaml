@@ -1,0 +1,82 @@
+repos:
+  - repo: local
+    hooks:
+      # --- pre-commit hooks ---
+
+      # Go: auto-format with gofumpt via golangci-lint
+      - id: golangci-lint-fmt
+        name: golangci-lint fmt
+        entry: golangci-lint fmt
+        types: [go]
+        exclude: ^gen/
+        language: system
+        pass_filenames: true
+        stages: [pre-commit]
+
+      # Go: lint changed packages
+      - id: golangci-lint
+        name: golangci-lint
+        entry: sh -c 'printf "%s\0" "$@" | xargs -0 -I{} dirname {} | sort -u | sed "s|^|./|" | xargs golangci-lint run' --
+        types: [go]
+        exclude: ^gen/
+        language: system
+        pass_filenames: true
+        require_serial: true
+        stages: [pre-commit]
+
+      # Proto: format
+      - id: buf-format
+        name: buf format
+        entry: sh -c 'printf "%s\n" "$@" | xargs -I{} buf format -w {}' --
+        files: \.proto$
+        language: system
+        pass_filenames: true
+        stages: [pre-commit]
+
+      # Proto: lint
+      - id: buf-lint
+        name: buf lint
+        entry: sh -c 'printf "%s\n" "$@" | xargs -I{} buf lint --path {}' --
+        files: \.proto$
+        language: system
+        pass_filenames: true
+        stages: [pre-commit]
+
+      # --- pre-push hooks ---
+
+      # Prevent pushing directly to main
+      - id: no-push-to-main
+        name: no push to main
+        entry: sh -c '[ "$(git rev-parse --abbrev-ref HEAD)" != "main" ]'
+        language: system
+        always_run: true
+        pass_filenames: false
+        stages: [pre-push]
+
+      # Proto: verify generated code is up to date
+      - id: check-generated-proto
+        name: check generated proto code
+        entry: make check-protos
+        files: \.proto$
+        language: system
+        pass_filenames: false
+        stages: [pre-push]
+
+      # Docs: verify tfplugindocs output is up to date
+      - id: check-generated-docs
+        name: check generated docs
+        entry: make check-docs
+        files: ^(splitsecure/.*\.go|examples/.*|main\.go)$
+        language: system
+        pass_filenames: false
+        stages: [pre-push]
+
+      # Go: run unit tests on every Go change
+      - id: go-test
+        name: go test
+        entry: make test
+        types: [go]
+        exclude: ^gen/
+        language: system
+        pass_filenames: false
+        stages: [pre-push]

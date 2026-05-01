@@ -1,0 +1,44 @@
+version: "2"
+linters:
+  default: all
+  disable:
+    - dupl # intentional parallel structure across data sources
+    - staticcheck # panics with Go 1.26
+    - exhaustruct
+    - ireturn
+    - varnamelen
+    - mnd
+    - godox
+    - testpackage
+    - depguard
+    - wrapcheck
+    - wsl
+    - wsl_v5
+  settings:
+    funlen:
+      lines: 200
+      statements: 100
+    lll:
+      line-length: 200
+  exclusions:
+    generated: lax
+    paths:
+      - gen
+    rules:
+      - linters:
+          - funlen
+          - goconst
+          - dupl
+          - paralleltest
+          - tparallel
+          - gochecknoglobals
+        path: _test\.go
+issues:
+  max-same-issues: 50
+formatters:
+  enable:
+    - gofumpt
+  exclusions:
+    generated: strict
+    paths:
+      - gen

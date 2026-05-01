@@ -1,0 +1,37 @@
+syntax = "proto3";
+package splitsecure.enclaveroundtrip.v1;
+
+import "splitsecure/enclave/v1/enclave.proto";
+import "splitsecure/requestsigning/v1/signed_request.proto";
+
+// Slim service definition for the Terraform provider.
+// Only declares RPCs the provider uses (Send + GetProposalForRequest;
+// Watch / Reply stay out of the provider's trust surface).
+service EnclaveRoundtripService {
+  rpc Send(SendRequest) returns (SendResponse);
+  rpc GetProposalForRequest(GetProposalForRequestRequest) returns (GetProposalForRequestResponse);
+}
+
+message SendRequest {
+  requestsigning.v1.SignedRequest signed = 1;
+  Base base = 2;
+  message Base {
+    oneof target {
+      bytes target_enclave_id = 1;
+      string new_proposal_scoped_enclave = 3;
+    }
+    enclave.v1.InvokeRequest invoke_request = 2;
+  }
+}
+
+message SendResponse {
+  bytes request_id = 1;
+}
+
+message GetProposalForRequestRequest {
+  bytes request_id = 1;
+}
+
+message GetProposalForRequestResponse {
+  bytes proposal_id = 1;
+}

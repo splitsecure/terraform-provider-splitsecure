@@ -1,0 +1,26 @@
+syntax = "proto3";
+package splitsecure.enclaveservices.threshold.v1;
+
+import "splitsecure/keys/v1/spec.proto";
+
+message ThresholdKey {
+  oneof union {
+    DerivedKey derived_key = 1;
+    WrappedKey wrapped_key = 2;
+  }
+}
+
+message DerivedKey {
+  // team_id can be repeated if this key depends on multiple teams.
+  repeated bytes team_ids = 1;
+  keys.v1.Spec spec = 2;
+  bytes derivation = 3;
+}
+
+// WrappedKey is a key that has been wrapped by
+// a derived key.
+message WrappedKey {
+  ThresholdKey wrapping_key = 1;
+  keys.v1.Spec spec = 2;
+  bytes wrapped_data = 3;
+}

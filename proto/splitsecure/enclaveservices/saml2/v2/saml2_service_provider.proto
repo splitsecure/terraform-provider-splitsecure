@@ -1,0 +1,118 @@
+syntax = "proto3";
+package splitsecure.enclaveservices.saml2.v2;
+
+import "splitsecure/notifications/v1/notification_policy.proto";
+import "splitsecure/saml2metadatafetcherservice/v1/metadata.proto";
+import "splitsecure/teamresource/v1/team_resource.proto";
+
+message SAML2ServiceProvider {
+  string name = 1;
+  // acs (2) removed: use metadata.entity_descriptor.sp_sso_descriptor[].assertion_consumer_service[].base.location
+  reserved 2;
+  // idp_auth_sum is the SHA3-256 hash of the AuthenticatedIdPStateAndKey.authenticated
+  // bytes that were presented when this SP was created. Used by the enclave at sign time
+  // to guarantee the SP was created against the exact same IdP.
+  bytes idp_auth_sum = 3;
+
+  // idp_coord_id_hint is the coordination-layer snowflake ID of the IdP resource.
+  // Used as a hint by the coordination service to look up the matching IdP for this SP.
+  string idp_coord_id_hint = 4;
+
+  splitsecure.saml2metadatafetcherservice.v1.Metadata metadata = 5;
+  splitsecure.teamresource.v1.AccountSensitivity sensitivity = 7;
+
+  // notification_policy controls how notifications are sent for proposals
+  // involving this service provider. Copied from IdPState at creation time.
+  splitsecure.notifications.v1.NotificationPolicy notification_policy = 6;
+
+  // description is an optional free-form description of this service provider
+  string description = 8;
+
+  // proposal_id is the SHA3-512 hash of the execution context bottle that
+  // created this resource, linking it to the audit log. Set by the enclave.
+  bytes proposal_id = 9;
+
+  // base_resource_attributes is the unified resource metadata view.
+  // When present, consumers should prefer this over the flat fields above.
+  // Both paths are supported for backwards compatibility.
+  splitsecure.teamresource.v1.BaseResourceAttributes base_resource_attributes = 10;
+
+  oneof account {
+    AWS aws = 100;
+    Cloudflare cloudflare = 112;
+    EventBrite event_brite = 105;
+    GCP gcp = 106;
+    GoogleWorkspace google_workspace = 101;
+    GoogleWorkspaceLegacy google_workspace_legacy = 110;
+    IBMCloud ibm_cloud = 113;
+    Kandji kandji = 111;
+    MicrosoftEntraID microsoft_entra_id = 107;
+    Okta okta = 103;
+    OracleCloud oracle_cloud = 114;
+    PagerDuty pager_duty = 115;
+    PitchBook pitch_book = 108;
+    Rapid7 rapid7 = 116;
+    Stripe stripe = 102;
+    Veeam veeam = 104;
+    Workday workday = 109;
+  }
+
+  message AWS {
+    string saml_provider_arn = 2;
+    string default_role_arn = 3 [deprecated = true];
+    repeated string allowed_role_arns = 4;
+  }
+
+  message Cloudflare {
+    string sso_endpoint = 1;
+    string default_email = 2;
+  }
+
+  message EventBrite {}
+
+  message GCP {
+    string default_email = 1;
+  }
+
+  message GoogleWorkspace {}
+
+  message GoogleWorkspaceLegacy {
+    string default_email = 1;
+    string domain_name = 2;
+  }
+
+  message IBMCloud {
+    string login_url = 1;
+  }
+
+  message Kandji {
+    string default_email = 1;
+  }
+
+  message MicrosoftEntraID {}
+
+  message Okta {
+    repeated string allowed_emails = 1;
+  }
+
+  message OracleCloud {}
+
+  message PagerDuty {}
+
+  message PitchBook {}
+
+  message Rapid7 {
+    string default_relay_state = 1;
+    string default_email = 2;
+    string default_first_name = 3;
+    string default_last_name = 4;
+    repeated string default_rbac_groups = 5;
+  }
+
+  message Stripe {
+    string account_id = 1;
+  }
+
+  message Veeam {}
+  message Workday {}
+}

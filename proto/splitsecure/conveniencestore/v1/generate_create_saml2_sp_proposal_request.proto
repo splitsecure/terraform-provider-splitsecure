@@ -1,0 +1,63 @@
+syntax = "proto3";
+package splitsecure.conveniencestore.v1;
+
+import "splitsecure/enclaveservices/saml2/v2/saml2_service_provider.proto";
+import "splitsecure/teamresource/v1/team_resource.proto";
+
+// GenerateCreateSAML2ServiceProviderProposalRequest assembles the
+// MintProposalRequest payload for creating a SAML2 SP on the named
+// team. idp_resource_s2r selects the IdP record whose signed state
+// will be embedded into CreateServiceProviderRequest.signed_idp; the
+// IdP must exist on the same team. Other inputs are flat fields
+// the server stitches into the saml2v2.SAML2ServiceProvider proto,
+// also stamping the computed fields (id, proposal_id, idp_auth_sum,
+// idp_coord_id_hint, metadata).
+message GenerateCreateSAML2ServiceProviderProposalRequest {
+  Base base = 1;
+  message Base {
+    string team_s2r = 1;
+
+    // idp_resource_s2r is the s2r URI of the IdP this SP binds to.
+    // Kind must be "saml2idp" and the team portion must match team_s2r.
+    string idp_resource_s2r = 2;
+
+    // attributes carries the shared resource metadata (name,
+    // description, notification_policy, sensitivity) in the same
+    // shape used internally by the saml2v2 enclave service. The
+    // proposal_id field is server-stamped and ignored on input.
+    splitsecure.teamresource.v1.BaseResourceAttributes attributes = 3;
+
+    // entity_id and acs_url populate
+    // metadata.entity_descriptor.{entity_id, sp_sso_descriptor[0]
+    // .assertion_consumer_service[0].location} server-side. Format
+    // depends on the integration; see the saml2v2 enclave service
+    // docs for per-kind expected shapes.
+    string entity_id = 4;
+    string acs_url = 5;
+
+    // Account variant. Exactly one branch must be populated; mirrors
+    // the SAML2ServiceProvider.account oneof in saml2v2 so the same
+    // typed messages flow through both layers without redefinition.
+    oneof account {
+      splitsecure.enclaveservices.saml2.v2.SAML2ServiceProvider.AWS aws = 100;
+      splitsecure.enclaveservices.saml2.v2.SAML2ServiceProvider.Cloudflare cloudflare = 101;
+      splitsecure.enclaveservices.saml2.v2.SAML2ServiceProvider.EventBrite event_brite = 102;
+      splitsecure.enclaveservices.saml2.v2.SAML2ServiceProvider.GCP gcp = 103;
+      splitsecure.enclaveservices.saml2.v2.SAML2ServiceProvider.GoogleWorkspace google_workspace = 104;
+      splitsecure.enclaveservices.saml2.v2.SAML2ServiceProvider.GoogleWorkspaceLegacy google_workspace_legacy = 105;
+      splitsecure.enclaveservices.saml2.v2.SAML2ServiceProvider.IBMCloud ibm_cloud = 106;
+      splitsecure.enclaveservices.saml2.v2.SAML2ServiceProvider.Kandji kandji = 107;
+      splitsecure.enclaveservices.saml2.v2.SAML2ServiceProvider.MicrosoftEntraID microsoft_entra_id = 108;
+      splitsecure.enclaveservices.saml2.v2.SAML2ServiceProvider.Okta okta = 109;
+      splitsecure.enclaveservices.saml2.v2.SAML2ServiceProvider.OracleCloud oracle_cloud = 110;
+      splitsecure.enclaveservices.saml2.v2.SAML2ServiceProvider.PagerDuty pager_duty = 111;
+      splitsecure.enclaveservices.saml2.v2.SAML2ServiceProvider.PitchBook pitch_book = 112;
+      splitsecure.enclaveservices.saml2.v2.SAML2ServiceProvider.Rapid7 rapid7 = 113;
+      splitsecure.enclaveservices.saml2.v2.SAML2ServiceProvider.Stripe stripe = 114;
+      splitsecure.enclaveservices.saml2.v2.SAML2ServiceProvider.Veeam veeam = 115;
+      splitsecure.enclaveservices.saml2.v2.SAML2ServiceProvider.Workday workday = 116;
+    }
+
+    string justification = 200;
+  }
+}

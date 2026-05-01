@@ -1,0 +1,9 @@
+version: v2
+modules:
+  - path: proto
+    name: github.com/splitsecure/terraform-provider-splitsecure
+    lint:
+      use:
+        - STANDARD
+deps:
+  - buf.build/protocolbuffers/wellknowntypes:v28.3

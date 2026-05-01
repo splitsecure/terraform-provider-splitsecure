@@ -1,0 +1,48 @@
+syntax = "proto3";
+package splitsecure.conveniencestore.v1;
+
+import "google/protobuf/timestamp.proto";
+import "splitsecure/teamresource/v1/team_resource.proto";
+
+// GenerateCreateSAML2IdentityProviderProposalRequest assembles the
+// MintProposalRequest payload for creating a SAML2 IdP on the named
+// team. The server does team autofill: resolves team_s2r to the team
+// base id, verifies the caller is a service account in the team's
+// owning org, and loads the active TeamInfo. The response is not a
+// Send -- the caller drives EnclaveRoundtripService.Send itself with
+// the returned invoke_request and target_org_s2r.
+message GenerateCreateSAML2IdentityProviderProposalRequest {
+  Base base = 1;
+  message Base {
+    string team_s2r = 1;
+
+    // attributes carries the shared resource metadata (name,
+    // description, notification_policy). The sensitivity field is
+    // ignored for IdPs (IdPState has no sensitivity), and proposal_id
+    // is server-stamped.
+    splitsecure.teamresource.v1.BaseResourceAttributes attributes = 2;
+
+    // provider_id is the SAML EntityID baked into the IdP's signing
+    // cert subject, every assertion's <Issuer>, and the metadata
+    // entityID attribute. When unset, the server stamps
+    // https://<frontend-host>/saml/idp/<six-bip39-words> -- the same
+    // shape the web UI's IdP create form generates client-side.
+    // Override here for stable URN-form EntityIDs (e.g. terraform).
+    string provider_id = 3;
+
+    // sso_url and sso_url_post are the IdP's HTTP-Redirect and
+    // HTTP-POST SSO endpoints. When unset, the server stamps the
+    // canonical SAML SP login URLs for the deployment. Override
+    // here only if traffic should route through a non-default host.
+    string sso_url = 4;
+    string sso_url_post = 5;
+
+    // not_before / not_after bound the IdP signing cert's validity
+    // window. When unset, the server stamps now / now + 10y --
+    // matches the web UI's IdP create form defaults.
+    google.protobuf.Timestamp not_before = 6;
+    google.protobuf.Timestamp not_after = 7;
+
+    string justification = 200;
+  }
+}
