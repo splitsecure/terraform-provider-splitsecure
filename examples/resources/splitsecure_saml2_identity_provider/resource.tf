@@ -1,5 +1,5 @@
 resource "splitsecure_saml2_identity_provider" "aws_console" {
-  team_s2r = "s2r:<deployment>:team:01HX..."
+  team_s2r = "s2r:us:team:..."
 
   name        = "platform-engineering/aws-123456789012"
   description = "SAML IdP fronting AWS account 123456789012."
@@ -8,6 +8,4 @@ resource "splitsecure_saml2_identity_provider" "aws_console" {
   # the web UI) and the SSO URLs anchor on the deployment's
   # frontend host. Set explicitly only for a stable URN-form EntityID
   # or a non-default SSO host.
-
-  justification = "Stand up the IdP that team platform-engineering will use to federate into AWS account 123456789012."
 }

@@ -12,8 +12,6 @@ resource "splitsecure_saml2_service_provider" "aws_console" {
   # from the Identity Center metadata XML.
   acs_url = "https://signin.aws.amazon.com/saml"
 
-  justification = "Federation to assume SplitSecureAdmin in AWS account 123456789012."
-
   account {
     kind = "aws"
     aws {

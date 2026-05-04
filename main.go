@@ -1,4 +1,4 @@
-//go:generate go run github.com/hashicorp/terraform-plugin-docs/cmd/tfplugindocs generate --provider-name splitsecure
+//go:generate go run github.com/hashicorp/terraform-plugin-docs/cmd/tfplugindocs generate --provider-name splitsecure --rendered-provider-name SplitSecure
 
 // Package main is the entry point for the SplitSecure Terraform provider.
 package main
