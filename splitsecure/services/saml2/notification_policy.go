@@ -1,6 +1,6 @@
 package saml2
 
-import notificationsv1 "github.com/splitsecure/terraform-provider-splitsecure/gen/go/proto/splitsecure/notifications/v1"
+import notificationsv1 "github.com/splitsecure/apis/gen/go/proto/splitsecure/notifications/v1"
 
 // HCL surface for notifications.v1.NotificationPolicy. Strings match
 // the proto enum suffix in lower_snake_case so HCL stays readable

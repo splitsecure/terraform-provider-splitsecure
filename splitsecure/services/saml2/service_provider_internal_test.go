@@ -8,8 +8,8 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 
-	conveniencestorev1 "github.com/splitsecure/terraform-provider-splitsecure/gen/go/proto/splitsecure/conveniencestore/v1"
-	saml2v2 "github.com/splitsecure/terraform-provider-splitsecure/gen/go/proto/splitsecure/enclaveservices/saml2/v2"
+	conveniencestorev1 "github.com/splitsecure/apis/gen/go/proto/splitsecure/conveniencestore/v1"
+	saml2v2 "github.com/splitsecure/apis/gen/go/proto/splitsecure/saml2/v2"
 )
 
 // setSAML2SPAccountFromRequest mirrors what the server's
@@ -26,37 +26,37 @@ func setSAML2SPAccountFromRequest(sp *saml2v2.SAML2ServiceProvider, req any) {
 	case *conveniencestorev1.GenerateCreateSAML2ServiceProviderProposalRequest_Base_Aws:
 		sp.Account = &saml2v2.SAML2ServiceProvider_Aws{Aws: w.Aws}
 	case *conveniencestorev1.GenerateCreateSAML2ServiceProviderProposalRequest_Base_Cloudflare:
-		sp.Account = &saml2v2.SAML2ServiceProvider_Cloudflare_{Cloudflare: w.Cloudflare}
+		sp.Account = &saml2v2.SAML2ServiceProvider_Cloudflare{Cloudflare: w.Cloudflare}
 	case *conveniencestorev1.GenerateCreateSAML2ServiceProviderProposalRequest_Base_EventBrite:
-		sp.Account = &saml2v2.SAML2ServiceProvider_EventBrite_{EventBrite: w.EventBrite}
+		sp.Account = &saml2v2.SAML2ServiceProvider_EventBrite{EventBrite: w.EventBrite}
 	case *conveniencestorev1.GenerateCreateSAML2ServiceProviderProposalRequest_Base_Gcp:
 		sp.Account = &saml2v2.SAML2ServiceProvider_Gcp{Gcp: w.Gcp}
 	case *conveniencestorev1.GenerateCreateSAML2ServiceProviderProposalRequest_Base_GoogleWorkspace:
-		sp.Account = &saml2v2.SAML2ServiceProvider_GoogleWorkspace_{GoogleWorkspace: w.GoogleWorkspace}
+		sp.Account = &saml2v2.SAML2ServiceProvider_GoogleWorkspace{GoogleWorkspace: w.GoogleWorkspace}
 	case *conveniencestorev1.GenerateCreateSAML2ServiceProviderProposalRequest_Base_GoogleWorkspaceLegacy:
-		sp.Account = &saml2v2.SAML2ServiceProvider_GoogleWorkspaceLegacy_{GoogleWorkspaceLegacy: w.GoogleWorkspaceLegacy}
+		sp.Account = &saml2v2.SAML2ServiceProvider_GoogleWorkspaceLegacy{GoogleWorkspaceLegacy: w.GoogleWorkspaceLegacy}
 	case *conveniencestorev1.GenerateCreateSAML2ServiceProviderProposalRequest_Base_IbmCloud:
 		sp.Account = &saml2v2.SAML2ServiceProvider_IbmCloud{IbmCloud: w.IbmCloud}
 	case *conveniencestorev1.GenerateCreateSAML2ServiceProviderProposalRequest_Base_Kandji:
-		sp.Account = &saml2v2.SAML2ServiceProvider_Kandji_{Kandji: w.Kandji}
+		sp.Account = &saml2v2.SAML2ServiceProvider_Kandji{Kandji: w.Kandji}
 	case *conveniencestorev1.GenerateCreateSAML2ServiceProviderProposalRequest_Base_MicrosoftEntraId:
 		sp.Account = &saml2v2.SAML2ServiceProvider_MicrosoftEntraId{MicrosoftEntraId: w.MicrosoftEntraId}
 	case *conveniencestorev1.GenerateCreateSAML2ServiceProviderProposalRequest_Base_Okta:
-		sp.Account = &saml2v2.SAML2ServiceProvider_Okta_{Okta: w.Okta}
+		sp.Account = &saml2v2.SAML2ServiceProvider_Okta{Okta: w.Okta}
 	case *conveniencestorev1.GenerateCreateSAML2ServiceProviderProposalRequest_Base_OracleCloud:
-		sp.Account = &saml2v2.SAML2ServiceProvider_OracleCloud_{OracleCloud: w.OracleCloud}
+		sp.Account = &saml2v2.SAML2ServiceProvider_OracleCloud{OracleCloud: w.OracleCloud}
 	case *conveniencestorev1.GenerateCreateSAML2ServiceProviderProposalRequest_Base_PagerDuty:
-		sp.Account = &saml2v2.SAML2ServiceProvider_PagerDuty_{PagerDuty: w.PagerDuty}
+		sp.Account = &saml2v2.SAML2ServiceProvider_PagerDuty{PagerDuty: w.PagerDuty}
 	case *conveniencestorev1.GenerateCreateSAML2ServiceProviderProposalRequest_Base_PitchBook:
-		sp.Account = &saml2v2.SAML2ServiceProvider_PitchBook_{PitchBook: w.PitchBook}
+		sp.Account = &saml2v2.SAML2ServiceProvider_PitchBook{PitchBook: w.PitchBook}
 	case *conveniencestorev1.GenerateCreateSAML2ServiceProviderProposalRequest_Base_Rapid7:
-		sp.Account = &saml2v2.SAML2ServiceProvider_Rapid7_{Rapid7: w.Rapid7}
+		sp.Account = &saml2v2.SAML2ServiceProvider_Rapid7{Rapid7: w.Rapid7}
 	case *conveniencestorev1.GenerateCreateSAML2ServiceProviderProposalRequest_Base_Stripe:
-		sp.Account = &saml2v2.SAML2ServiceProvider_Stripe_{Stripe: w.Stripe}
+		sp.Account = &saml2v2.SAML2ServiceProvider_Stripe{Stripe: w.Stripe}
 	case *conveniencestorev1.GenerateCreateSAML2ServiceProviderProposalRequest_Base_Veeam:
-		sp.Account = &saml2v2.SAML2ServiceProvider_Veeam_{Veeam: w.Veeam}
+		sp.Account = &saml2v2.SAML2ServiceProvider_Veeam{Veeam: w.Veeam}
 	case *conveniencestorev1.GenerateCreateSAML2ServiceProviderProposalRequest_Base_Workday:
-		sp.Account = &saml2v2.SAML2ServiceProvider_Workday_{Workday: w.Workday}
+		sp.Account = &saml2v2.SAML2ServiceProvider_Workday{Workday: w.Workday}
 	}
 }
 

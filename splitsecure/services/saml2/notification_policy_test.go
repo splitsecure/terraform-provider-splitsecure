@@ -3,7 +3,7 @@ package saml2
 import (
 	"testing"
 
-	notificationsv1 "github.com/splitsecure/terraform-provider-splitsecure/gen/go/proto/splitsecure/notifications/v1"
+	notificationsv1 "github.com/splitsecure/apis/gen/go/proto/splitsecure/notifications/v1"
 )
 
 func TestNotificationPolicyRoundTrip(t *testing.T) {

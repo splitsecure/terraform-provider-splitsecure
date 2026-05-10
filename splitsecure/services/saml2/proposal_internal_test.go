@@ -8,13 +8,13 @@ import (
 
 	"connectrpc.com/connect"
 
-	conveniencestorev1 "github.com/splitsecure/terraform-provider-splitsecure/gen/go/proto/splitsecure/conveniencestore/v1"
-	"github.com/splitsecure/terraform-provider-splitsecure/gen/go/proto/splitsecure/conveniencestore/v1/conveniencestorev1connect"
-	enclavev1 "github.com/splitsecure/terraform-provider-splitsecure/gen/go/proto/splitsecure/enclave/v1"
-	enclaveroundtripv1 "github.com/splitsecure/terraform-provider-splitsecure/gen/go/proto/splitsecure/enclaveroundtrip/v1"
-	"github.com/splitsecure/terraform-provider-splitsecure/gen/go/proto/splitsecure/enclaveroundtrip/v1/enclaveroundtripv1connect"
-	proposalsv1 "github.com/splitsecure/terraform-provider-splitsecure/gen/go/proto/splitsecure/proposals/v1"
-	"github.com/splitsecure/terraform-provider-splitsecure/gen/go/proto/splitsecure/proposals/v1/proposalsv1connect"
+	conveniencestorev1 "github.com/splitsecure/apis/gen/go/proto/splitsecure/conveniencestore/v1"
+	"github.com/splitsecure/apis/gen/go/proto/splitsecure/conveniencestore/v1/conveniencestorev1connect"
+	enclavev1 "github.com/splitsecure/apis/gen/go/proto/splitsecure/enclave/v1"
+	enclaveroundtripv1 "github.com/splitsecure/apis/gen/go/proto/splitsecure/enclaveroundtrip/v1"
+	"github.com/splitsecure/apis/gen/go/proto/splitsecure/enclaveroundtrip/v1/enclaveroundtripv1connect"
+	proposalsv1 "github.com/splitsecure/apis/gen/go/proto/splitsecure/proposals/v1"
+	"github.com/splitsecure/apis/gen/go/proto/splitsecure/proposals/v1/proposalsv1connect"
 	"github.com/splitsecure/terraform-provider-splitsecure/splitsecure/client"
 )
 

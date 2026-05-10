@@ -9,10 +9,10 @@ import (
 	"connectrpc.com/connect"
 	"github.com/hashicorp/terraform-plugin-log/tflog"
 
-	conveniencestorev1 "github.com/splitsecure/terraform-provider-splitsecure/gen/go/proto/splitsecure/conveniencestore/v1"
-	enclavev1 "github.com/splitsecure/terraform-provider-splitsecure/gen/go/proto/splitsecure/enclave/v1"
-	enclaveroundtripv1 "github.com/splitsecure/terraform-provider-splitsecure/gen/go/proto/splitsecure/enclaveroundtrip/v1"
-	proposalsv1 "github.com/splitsecure/terraform-provider-splitsecure/gen/go/proto/splitsecure/proposals/v1"
+	conveniencestorev1 "github.com/splitsecure/apis/gen/go/proto/splitsecure/conveniencestore/v1"
+	enclavev1 "github.com/splitsecure/apis/gen/go/proto/splitsecure/enclave/v1"
+	enclaveroundtripv1 "github.com/splitsecure/apis/gen/go/proto/splitsecure/enclaveroundtrip/v1"
+	proposalsv1 "github.com/splitsecure/apis/gen/go/proto/splitsecure/proposals/v1"
 	"github.com/splitsecure/terraform-provider-splitsecure/splitsecure/client"
 )
 

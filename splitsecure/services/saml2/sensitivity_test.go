@@ -3,7 +3,7 @@ package saml2
 import (
 	"testing"
 
-	teamresourcev1 "github.com/splitsecure/terraform-provider-splitsecure/gen/go/proto/splitsecure/teamresource/v1"
+	teamresourcev1 "github.com/splitsecure/apis/gen/go/proto/splitsecure/teamresource/v1"
 )
 
 func TestSensitivityRoundTrip(t *testing.T) {

@@ -18,9 +18,10 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	"google.golang.org/protobuf/proto"
 
-	conveniencestorev1 "github.com/splitsecure/terraform-provider-splitsecure/gen/go/proto/splitsecure/conveniencestore/v1"
-	saml2v2 "github.com/splitsecure/terraform-provider-splitsecure/gen/go/proto/splitsecure/enclaveservices/saml2/v2"
-	teamresourcev1 "github.com/splitsecure/terraform-provider-splitsecure/gen/go/proto/splitsecure/teamresource/v1"
+	conveniencestorev1 "github.com/splitsecure/apis/gen/go/proto/splitsecure/conveniencestore/v1"
+	saml2v1 "github.com/splitsecure/apis/gen/go/proto/splitsecure/saml2/v1"
+	saml2v2 "github.com/splitsecure/apis/gen/go/proto/splitsecure/saml2/v2"
+	teamresourcev1 "github.com/splitsecure/apis/gen/go/proto/splitsecure/teamresource/v1"
 	"github.com/splitsecure/terraform-provider-splitsecure/splitsecure/client"
 )
 
@@ -748,50 +749,50 @@ func setAccountOnRequest(ctx context.Context, base *conveniencestorev1.GenerateC
 
 	switch kind {
 	case kindAWS:
-		base.Account = &conveniencestorev1.GenerateCreateSAML2ServiceProviderProposalRequest_Base_Aws{Aws: &saml2v2.SAML2ServiceProvider_AWS{
+		base.Account = &conveniencestorev1.GenerateCreateSAML2ServiceProviderProposalRequest_Base_Aws{Aws: &saml2v1.AWS{
 			SamlProviderArn: plan.Account.AWS.SAMLProviderARN.ValueString(),
 			AllowedRoleArns: listToStrings(ctx, plan.Account.AWS.AllowedRoleARNs, &diags),
 		}}
 	case kindCloudflare:
-		base.Account = &conveniencestorev1.GenerateCreateSAML2ServiceProviderProposalRequest_Base_Cloudflare{Cloudflare: &saml2v2.SAML2ServiceProvider_Cloudflare{
+		base.Account = &conveniencestorev1.GenerateCreateSAML2ServiceProviderProposalRequest_Base_Cloudflare{Cloudflare: &saml2v1.Cloudflare{
 			SsoEndpoint:  plan.Account.Cloudflare.SSOEndpoint.ValueString(),
 			DefaultEmail: plan.Account.Cloudflare.DefaultEmail.ValueString(),
 		}}
 	case kindEventBrite:
-		base.Account = &conveniencestorev1.GenerateCreateSAML2ServiceProviderProposalRequest_Base_EventBrite{EventBrite: &saml2v2.SAML2ServiceProvider_EventBrite{}}
+		base.Account = &conveniencestorev1.GenerateCreateSAML2ServiceProviderProposalRequest_Base_EventBrite{EventBrite: &saml2v1.EventBrite{}}
 	case kindGCP:
-		base.Account = &conveniencestorev1.GenerateCreateSAML2ServiceProviderProposalRequest_Base_Gcp{Gcp: &saml2v2.SAML2ServiceProvider_GCP{
+		base.Account = &conveniencestorev1.GenerateCreateSAML2ServiceProviderProposalRequest_Base_Gcp{Gcp: &saml2v1.GCP{
 			DefaultEmail: plan.Account.GCP.DefaultEmail.ValueString(),
 		}}
 	case kindGoogleWorkspace:
-		base.Account = &conveniencestorev1.GenerateCreateSAML2ServiceProviderProposalRequest_Base_GoogleWorkspace{GoogleWorkspace: &saml2v2.SAML2ServiceProvider_GoogleWorkspace{}}
+		base.Account = &conveniencestorev1.GenerateCreateSAML2ServiceProviderProposalRequest_Base_GoogleWorkspace{GoogleWorkspace: &saml2v1.GoogleWorkspace{}}
 	case kindGoogleWorkspaceLegacy:
-		base.Account = &conveniencestorev1.GenerateCreateSAML2ServiceProviderProposalRequest_Base_GoogleWorkspaceLegacy{GoogleWorkspaceLegacy: &saml2v2.SAML2ServiceProvider_GoogleWorkspaceLegacy{
+		base.Account = &conveniencestorev1.GenerateCreateSAML2ServiceProviderProposalRequest_Base_GoogleWorkspaceLegacy{GoogleWorkspaceLegacy: &saml2v1.GoogleWorkspaceLegacy{
 			DefaultEmail: plan.Account.GoogleWorkspaceLegacy.DefaultEmail.ValueString(),
 			DomainName:   plan.Account.GoogleWorkspaceLegacy.DomainName.ValueString(),
 		}}
 	case kindIBMCloud:
-		base.Account = &conveniencestorev1.GenerateCreateSAML2ServiceProviderProposalRequest_Base_IbmCloud{IbmCloud: &saml2v2.SAML2ServiceProvider_IBMCloud{
+		base.Account = &conveniencestorev1.GenerateCreateSAML2ServiceProviderProposalRequest_Base_IbmCloud{IbmCloud: &saml2v1.IBMCloud{
 			LoginUrl: plan.Account.IBMCloud.LoginURL.ValueString(),
 		}}
 	case kindKandji:
-		base.Account = &conveniencestorev1.GenerateCreateSAML2ServiceProviderProposalRequest_Base_Kandji{Kandji: &saml2v2.SAML2ServiceProvider_Kandji{
+		base.Account = &conveniencestorev1.GenerateCreateSAML2ServiceProviderProposalRequest_Base_Kandji{Kandji: &saml2v1.Kandji{
 			DefaultEmail: plan.Account.Kandji.DefaultEmail.ValueString(),
 		}}
 	case kindMicrosoftEntraID:
-		base.Account = &conveniencestorev1.GenerateCreateSAML2ServiceProviderProposalRequest_Base_MicrosoftEntraId{MicrosoftEntraId: &saml2v2.SAML2ServiceProvider_MicrosoftEntraID{}}
+		base.Account = &conveniencestorev1.GenerateCreateSAML2ServiceProviderProposalRequest_Base_MicrosoftEntraId{MicrosoftEntraId: &saml2v1.MicrosoftEntraID{}}
 	case kindOkta:
-		base.Account = &conveniencestorev1.GenerateCreateSAML2ServiceProviderProposalRequest_Base_Okta{Okta: &saml2v2.SAML2ServiceProvider_Okta{
+		base.Account = &conveniencestorev1.GenerateCreateSAML2ServiceProviderProposalRequest_Base_Okta{Okta: &saml2v1.Okta{
 			AllowedEmails: listToStrings(ctx, plan.Account.Okta.AllowedEmails, &diags),
 		}}
 	case kindOracleCloud:
-		base.Account = &conveniencestorev1.GenerateCreateSAML2ServiceProviderProposalRequest_Base_OracleCloud{OracleCloud: &saml2v2.SAML2ServiceProvider_OracleCloud{}}
+		base.Account = &conveniencestorev1.GenerateCreateSAML2ServiceProviderProposalRequest_Base_OracleCloud{OracleCloud: &saml2v1.OracleCloud{}}
 	case kindPagerDuty:
-		base.Account = &conveniencestorev1.GenerateCreateSAML2ServiceProviderProposalRequest_Base_PagerDuty{PagerDuty: &saml2v2.SAML2ServiceProvider_PagerDuty{}}
+		base.Account = &conveniencestorev1.GenerateCreateSAML2ServiceProviderProposalRequest_Base_PagerDuty{PagerDuty: &saml2v1.PagerDuty{}}
 	case kindPitchBook:
-		base.Account = &conveniencestorev1.GenerateCreateSAML2ServiceProviderProposalRequest_Base_PitchBook{PitchBook: &saml2v2.SAML2ServiceProvider_PitchBook{}}
+		base.Account = &conveniencestorev1.GenerateCreateSAML2ServiceProviderProposalRequest_Base_PitchBook{PitchBook: &saml2v1.PitchBook{}}
 	case kindRapid7:
-		base.Account = &conveniencestorev1.GenerateCreateSAML2ServiceProviderProposalRequest_Base_Rapid7{Rapid7: &saml2v2.SAML2ServiceProvider_Rapid7{
+		base.Account = &conveniencestorev1.GenerateCreateSAML2ServiceProviderProposalRequest_Base_Rapid7{Rapid7: &saml2v1.Rapid7{
 			DefaultRelayState: plan.Account.Rapid7.DefaultRelayState.ValueString(),
 			DefaultEmail:      plan.Account.Rapid7.DefaultEmail.ValueString(),
 			DefaultFirstName:  plan.Account.Rapid7.DefaultFirstName.ValueString(),
@@ -799,13 +800,13 @@ func setAccountOnRequest(ctx context.Context, base *conveniencestorev1.GenerateC
 			DefaultRbacGroups: listToStrings(ctx, plan.Account.Rapid7.DefaultRBACGroups, &diags),
 		}}
 	case kindStripe:
-		base.Account = &conveniencestorev1.GenerateCreateSAML2ServiceProviderProposalRequest_Base_Stripe{Stripe: &saml2v2.SAML2ServiceProvider_Stripe{
+		base.Account = &conveniencestorev1.GenerateCreateSAML2ServiceProviderProposalRequest_Base_Stripe{Stripe: &saml2v1.Stripe{
 			AccountId: plan.Account.Stripe.AccountID.ValueString(),
 		}}
 	case kindVeeam:
-		base.Account = &conveniencestorev1.GenerateCreateSAML2ServiceProviderProposalRequest_Base_Veeam{Veeam: &saml2v2.SAML2ServiceProvider_Veeam{}}
+		base.Account = &conveniencestorev1.GenerateCreateSAML2ServiceProviderProposalRequest_Base_Veeam{Veeam: &saml2v1.Veeam{}}
 	case kindWorkday:
-		base.Account = &conveniencestorev1.GenerateCreateSAML2ServiceProviderProposalRequest_Base_Workday{Workday: &saml2v2.SAML2ServiceProvider_Workday{}}
+		base.Account = &conveniencestorev1.GenerateCreateSAML2ServiceProviderProposalRequest_Base_Workday{Workday: &saml2v1.Workday{}}
 	default:
 		diags.AddError("unknown account variant", kind)
 
@@ -888,7 +889,7 @@ func accountFromSP(ctx context.Context, sp *saml2v2.SAML2ServiceProvider, diags 
 				AllowedRoleARNs: stringsToList(ctx, a.Aws.GetAllowedRoleArns(), diags),
 			},
 		}, kindAWS
-	case *saml2v2.SAML2ServiceProvider_Cloudflare_:
+	case *saml2v2.SAML2ServiceProvider_Cloudflare:
 		return &accountModel{
 			Kind: types.StringValue(kindCloudflare),
 			Cloudflare: &accountCloudflareModel{
@@ -896,16 +897,16 @@ func accountFromSP(ctx context.Context, sp *saml2v2.SAML2ServiceProvider, diags 
 				DefaultEmail: types.StringValue(a.Cloudflare.GetDefaultEmail()),
 			},
 		}, kindCloudflare
-	case *saml2v2.SAML2ServiceProvider_EventBrite_:
+	case *saml2v2.SAML2ServiceProvider_EventBrite:
 		return &accountModel{Kind: types.StringValue(kindEventBrite), EventBrite: &accountEventBriteModel{}}, kindEventBrite
 	case *saml2v2.SAML2ServiceProvider_Gcp:
 		return &accountModel{
 			Kind: types.StringValue(kindGCP),
 			GCP:  &accountGCPModel{DefaultEmail: types.StringValue(a.Gcp.GetDefaultEmail())},
 		}, kindGCP
-	case *saml2v2.SAML2ServiceProvider_GoogleWorkspace_:
+	case *saml2v2.SAML2ServiceProvider_GoogleWorkspace:
 		return &accountModel{Kind: types.StringValue(kindGoogleWorkspace), GoogleWorkspace: &accountGoogleWorkspaceModel{}}, kindGoogleWorkspace
-	case *saml2v2.SAML2ServiceProvider_GoogleWorkspaceLegacy_:
+	case *saml2v2.SAML2ServiceProvider_GoogleWorkspaceLegacy:
 		return &accountModel{
 			Kind: types.StringValue(kindGoogleWorkspaceLegacy),
 			GoogleWorkspaceLegacy: &accountGoogleWorkspaceLegacyModel{
@@ -918,25 +919,25 @@ func accountFromSP(ctx context.Context, sp *saml2v2.SAML2ServiceProvider, diags 
 			Kind:     types.StringValue(kindIBMCloud),
 			IBMCloud: &accountIBMCloudModel{LoginURL: types.StringValue(a.IbmCloud.GetLoginUrl())},
 		}, kindIBMCloud
-	case *saml2v2.SAML2ServiceProvider_Kandji_:
+	case *saml2v2.SAML2ServiceProvider_Kandji:
 		return &accountModel{
 			Kind:   types.StringValue(kindKandji),
 			Kandji: &accountKandjiModel{DefaultEmail: types.StringValue(a.Kandji.GetDefaultEmail())},
 		}, kindKandji
 	case *saml2v2.SAML2ServiceProvider_MicrosoftEntraId:
 		return &accountModel{Kind: types.StringValue(kindMicrosoftEntraID), MicrosoftEntraID: &accountMicrosoftEntraIDModel{}}, kindMicrosoftEntraID
-	case *saml2v2.SAML2ServiceProvider_Okta_:
+	case *saml2v2.SAML2ServiceProvider_Okta:
 		return &accountModel{
 			Kind: types.StringValue(kindOkta),
 			Okta: &accountOktaModel{AllowedEmails: stringsToList(ctx, a.Okta.GetAllowedEmails(), diags)},
 		}, kindOkta
-	case *saml2v2.SAML2ServiceProvider_OracleCloud_:
+	case *saml2v2.SAML2ServiceProvider_OracleCloud:
 		return &accountModel{Kind: types.StringValue(kindOracleCloud), OracleCloud: &accountOracleCloudModel{}}, kindOracleCloud
-	case *saml2v2.SAML2ServiceProvider_PagerDuty_:
+	case *saml2v2.SAML2ServiceProvider_PagerDuty:
 		return &accountModel{Kind: types.StringValue(kindPagerDuty), PagerDuty: &accountPagerDutyModel{}}, kindPagerDuty
-	case *saml2v2.SAML2ServiceProvider_PitchBook_:
+	case *saml2v2.SAML2ServiceProvider_PitchBook:
 		return &accountModel{Kind: types.StringValue(kindPitchBook), PitchBook: &accountPitchBookModel{}}, kindPitchBook
-	case *saml2v2.SAML2ServiceProvider_Rapid7_:
+	case *saml2v2.SAML2ServiceProvider_Rapid7:
 		return &accountModel{
 			Kind: types.StringValue(kindRapid7),
 			Rapid7: &accountRapid7Model{
@@ -947,14 +948,14 @@ func accountFromSP(ctx context.Context, sp *saml2v2.SAML2ServiceProvider, diags 
 				DefaultRBACGroups: stringsToList(ctx, a.Rapid7.GetDefaultRbacGroups(), diags),
 			},
 		}, kindRapid7
-	case *saml2v2.SAML2ServiceProvider_Stripe_:
+	case *saml2v2.SAML2ServiceProvider_Stripe:
 		return &accountModel{
 			Kind:   types.StringValue(kindStripe),
 			Stripe: &accountStripeModel{AccountID: types.StringValue(a.Stripe.GetAccountId())},
 		}, kindStripe
-	case *saml2v2.SAML2ServiceProvider_Veeam_:
+	case *saml2v2.SAML2ServiceProvider_Veeam:
 		return &accountModel{Kind: types.StringValue(kindVeeam), Veeam: &accountVeeamModel{}}, kindVeeam
-	case *saml2v2.SAML2ServiceProvider_Workday_:
+	case *saml2v2.SAML2ServiceProvider_Workday:
 		return &accountModel{Kind: types.StringValue(kindWorkday), Workday: &accountWorkdayModel{}}, kindWorkday
 	}
 

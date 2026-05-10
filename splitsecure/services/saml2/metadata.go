@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"time"
 
-	saml2v1 "github.com/splitsecure/terraform-provider-splitsecure/gen/go/proto/splitsecure/enclaveservices/saml2/v1"
+	saml2v1 "github.com/splitsecure/apis/gen/go/proto/splitsecure/saml2/v1"
 )
 
 // idpMetadataXML renders the SAML 2.0 EntityDescriptor for an IdPState.

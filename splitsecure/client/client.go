@@ -8,9 +8,9 @@ import (
 	"github.com/hashicorp/go-retryablehttp"
 	"github.com/hashicorp/terraform-plugin-log/tflog"
 
-	conveniencestorev1connect "github.com/splitsecure/terraform-provider-splitsecure/gen/go/proto/splitsecure/conveniencestore/v1/conveniencestorev1connect"
-	enclaveroundtripv1connect "github.com/splitsecure/terraform-provider-splitsecure/gen/go/proto/splitsecure/enclaveroundtrip/v1/enclaveroundtripv1connect"
-	proposalsv1connect "github.com/splitsecure/terraform-provider-splitsecure/gen/go/proto/splitsecure/proposals/v1/proposalsv1connect"
+	conveniencestorev1connect "github.com/splitsecure/apis/gen/go/proto/splitsecure/conveniencestore/v1/conveniencestorev1connect"
+	enclaveroundtripv1connect "github.com/splitsecure/apis/gen/go/proto/splitsecure/enclaveroundtrip/v1/enclaveroundtripv1connect"
+	proposalsv1connect "github.com/splitsecure/apis/gen/go/proto/splitsecure/proposals/v1/proposalsv1connect"
 )
 
 // Client wraps the SplitSecure Connect RPC clients plus the
