@@ -3,7 +3,7 @@ module github.com/splitsecure/terraform-provider-splitsecure
 go 1.26
 
 require (
-	connectrpc.com/connect v1.19.1
+	connectrpc.com/connect v1.19.2
 	github.com/hashicorp/go-retryablehttp v0.7.8
 	github.com/hashicorp/terraform-plugin-docs v0.25.0
 	github.com/hashicorp/terraform-plugin-framework v1.19.0
