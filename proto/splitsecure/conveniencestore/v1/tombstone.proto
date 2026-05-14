@@ -1,6 +1,0 @@
-syntax = "proto3";
-package splitsecure.conveniencestore.v1;
-
-message Tombstone {
-  bytes target_id = 1;
-}

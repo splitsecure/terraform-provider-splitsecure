@@ -10,7 +10,7 @@ require (
 	github.com/hashicorp/terraform-plugin-framework-validators v0.19.0
 	github.com/hashicorp/terraform-plugin-go v0.31.0
 	github.com/hashicorp/terraform-plugin-log v0.10.0
-	github.com/splitsecure/apis v0.0.0-00010101000000-000000000000
+	github.com/splitsecure/apis v0.0.0-20260514001223-f52c82fb5959
 	google.golang.org/protobuf v1.36.11
 )
 
@@ -75,5 +75,3 @@ require (
 	gopkg.in/yaml.v2 v2.3.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
-
-replace github.com/splitsecure/apis => ../apis

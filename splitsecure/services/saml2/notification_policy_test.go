@@ -3,7 +3,7 @@ package saml2
 import (
 	"testing"
 
-	notificationsv1 "github.com/splitsecure/apis/gen/go/proto/splitsecure/notifications/v1"
+	teamresourcev1 "github.com/splitsecure/apis/gen/go/proto/splitsecure/teamresource/v1"
 )
 
 func TestNotificationPolicyRoundTrip(t *testing.T) {
@@ -12,10 +12,10 @@ func TestNotificationPolicyRoundTrip(t *testing.T) {
 	cases := []struct {
 		name string
 		hcl  string
-		want notificationsv1.NotificationPolicy
+		want teamresourcev1.NotificationPolicy
 	}{
-		{"notify_everyone", notificationPolicyNotifyEveryone, notificationsv1.NotificationPolicy_NOTIFICATION_POLICY_NOTIFY_EVERYONE},
-		{"allow_selective", notificationPolicySelective, notificationsv1.NotificationPolicy_NOTIFICATION_POLICY_ALLOW_SELECTIVE_NOTIFICATIONS},
+		{"notify_everyone", notificationPolicyNotifyEveryone, teamresourcev1.NotificationPolicy_NOTIFICATION_POLICY_NOTIFY_EVERYONE},
+		{"allow_selective", notificationPolicySelective, teamresourcev1.NotificationPolicy_NOTIFICATION_POLICY_ALLOW_SELECTIVE_NOTIFICATIONS},
 	}
 
 	for _, tc := range cases {
@@ -37,13 +37,13 @@ func TestNotificationPolicyRoundTrip(t *testing.T) {
 func TestNotificationPolicyDefaults(t *testing.T) {
 	t.Parallel()
 
-	if got := notificationPolicyFromString(""); got != notificationsv1.NotificationPolicy_NOTIFICATION_POLICY_NOTIFY_EVERYONE {
+	if got := notificationPolicyFromString(""); got != teamresourcev1.NotificationPolicy_NOTIFICATION_POLICY_NOTIFY_EVERYONE {
 		t.Fatalf("empty fromString = %v, want NOTIFY_EVERYONE", got)
 	}
-	if got := notificationPolicyFromString("nonsense"); got != notificationsv1.NotificationPolicy_NOTIFICATION_POLICY_NOTIFY_EVERYONE {
+	if got := notificationPolicyFromString("nonsense"); got != teamresourcev1.NotificationPolicy_NOTIFICATION_POLICY_NOTIFY_EVERYONE {
 		t.Fatalf("unknown fromString = %v, want NOTIFY_EVERYONE", got)
 	}
-	if got := notificationPolicyToString(notificationsv1.NotificationPolicy_NOTIFICATION_POLICY_UNSPECIFIED); got != notificationPolicyNotifyEveryone {
+	if got := notificationPolicyToString(teamresourcev1.NotificationPolicy_NOTIFICATION_POLICY_UNSPECIFIED); got != notificationPolicyNotifyEveryone {
 		t.Fatalf("UNSPECIFIED toString = %q, want %q", got, notificationPolicyNotifyEveryone)
 	}
 }
@@ -60,7 +60,7 @@ func TestNotificationPolicyValuesCoverage(t *testing.T) {
 			t.Parallel()
 
 			proto := notificationPolicyFromString(hcl)
-			if proto == notificationsv1.NotificationPolicy_NOTIFICATION_POLICY_UNSPECIFIED {
+			if proto == teamresourcev1.NotificationPolicy_NOTIFICATION_POLICY_UNSPECIFIED {
 				t.Fatalf("%q maps to UNSPECIFIED -- missing branch in notificationPolicyFromString", hcl)
 			}
 			if back := notificationPolicyToString(proto); back != hcl {

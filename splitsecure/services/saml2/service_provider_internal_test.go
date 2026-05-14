@@ -8,57 +8,8 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 
-	conveniencestorev1 "github.com/splitsecure/apis/gen/go/proto/splitsecure/conveniencestore/v1"
 	saml2v2 "github.com/splitsecure/apis/gen/go/proto/splitsecure/saml2/v2"
 )
-
-// setSAML2SPAccountFromRequest mirrors what the server's
-// GenerateCreateSAML2ServiceProviderProposal handler does: lifts the
-// inner saml2v2 message out of the request's per-kind oneof wrapper
-// and assigns it to the SAML2ServiceProvider's matching wrapper.
-// In-place mutation so the test doesn't have to round-trip the value
-// through the unexported isSAML2ServiceProvider_Account interface
-// (which can't be referenced across packages).
-//
-//nolint:cyclop // 17 branches mirror the SP account variants; consolidating obscures the wrap.
-func setSAML2SPAccountFromRequest(sp *saml2v2.SAML2ServiceProvider, req any) {
-	switch w := req.(type) {
-	case *conveniencestorev1.GenerateCreateSAML2ServiceProviderProposalRequest_Base_Aws:
-		sp.Account = &saml2v2.SAML2ServiceProvider_Aws{Aws: w.Aws}
-	case *conveniencestorev1.GenerateCreateSAML2ServiceProviderProposalRequest_Base_Cloudflare:
-		sp.Account = &saml2v2.SAML2ServiceProvider_Cloudflare{Cloudflare: w.Cloudflare}
-	case *conveniencestorev1.GenerateCreateSAML2ServiceProviderProposalRequest_Base_EventBrite:
-		sp.Account = &saml2v2.SAML2ServiceProvider_EventBrite{EventBrite: w.EventBrite}
-	case *conveniencestorev1.GenerateCreateSAML2ServiceProviderProposalRequest_Base_Gcp:
-		sp.Account = &saml2v2.SAML2ServiceProvider_Gcp{Gcp: w.Gcp}
-	case *conveniencestorev1.GenerateCreateSAML2ServiceProviderProposalRequest_Base_GoogleWorkspace:
-		sp.Account = &saml2v2.SAML2ServiceProvider_GoogleWorkspace{GoogleWorkspace: w.GoogleWorkspace}
-	case *conveniencestorev1.GenerateCreateSAML2ServiceProviderProposalRequest_Base_GoogleWorkspaceLegacy:
-		sp.Account = &saml2v2.SAML2ServiceProvider_GoogleWorkspaceLegacy{GoogleWorkspaceLegacy: w.GoogleWorkspaceLegacy}
-	case *conveniencestorev1.GenerateCreateSAML2ServiceProviderProposalRequest_Base_IbmCloud:
-		sp.Account = &saml2v2.SAML2ServiceProvider_IbmCloud{IbmCloud: w.IbmCloud}
-	case *conveniencestorev1.GenerateCreateSAML2ServiceProviderProposalRequest_Base_Kandji:
-		sp.Account = &saml2v2.SAML2ServiceProvider_Kandji{Kandji: w.Kandji}
-	case *conveniencestorev1.GenerateCreateSAML2ServiceProviderProposalRequest_Base_MicrosoftEntraId:
-		sp.Account = &saml2v2.SAML2ServiceProvider_MicrosoftEntraId{MicrosoftEntraId: w.MicrosoftEntraId}
-	case *conveniencestorev1.GenerateCreateSAML2ServiceProviderProposalRequest_Base_Okta:
-		sp.Account = &saml2v2.SAML2ServiceProvider_Okta{Okta: w.Okta}
-	case *conveniencestorev1.GenerateCreateSAML2ServiceProviderProposalRequest_Base_OracleCloud:
-		sp.Account = &saml2v2.SAML2ServiceProvider_OracleCloud{OracleCloud: w.OracleCloud}
-	case *conveniencestorev1.GenerateCreateSAML2ServiceProviderProposalRequest_Base_PagerDuty:
-		sp.Account = &saml2v2.SAML2ServiceProvider_PagerDuty{PagerDuty: w.PagerDuty}
-	case *conveniencestorev1.GenerateCreateSAML2ServiceProviderProposalRequest_Base_PitchBook:
-		sp.Account = &saml2v2.SAML2ServiceProvider_PitchBook{PitchBook: w.PitchBook}
-	case *conveniencestorev1.GenerateCreateSAML2ServiceProviderProposalRequest_Base_Rapid7:
-		sp.Account = &saml2v2.SAML2ServiceProvider_Rapid7{Rapid7: w.Rapid7}
-	case *conveniencestorev1.GenerateCreateSAML2ServiceProviderProposalRequest_Base_Stripe:
-		sp.Account = &saml2v2.SAML2ServiceProvider_Stripe{Stripe: w.Stripe}
-	case *conveniencestorev1.GenerateCreateSAML2ServiceProviderProposalRequest_Base_Veeam:
-		sp.Account = &saml2v2.SAML2ServiceProvider_Veeam{Veeam: w.Veeam}
-	case *conveniencestorev1.GenerateCreateSAML2ServiceProviderProposalRequest_Base_Workday:
-		sp.Account = &saml2v2.SAML2ServiceProvider_Workday{Workday: w.Workday}
-	}
-}
 
 // accountVariantFixtures returns one synthetic accountModel per
 // supported SP variant. Each entry carries a non-zero value in every
@@ -165,9 +116,9 @@ func TestSPAccountVariantsCovered(t *testing.T) {
 }
 
 // TestSPAccountRoundTrip exercises every variant through the full
-// HCL-plan -> request-wrapper -> saml2v2 oneof -> HCL-plan loop, so a
-// per-variant encoder/decoder mismatch (wrong wrapper type, missing
-// field) surfaces here instead of mid-Send.
+// HCL-plan -> KnownProvider union -> HCL-plan loop, so a per-variant
+// encoder/decoder mismatch (wrong wrapper type, missing field)
+// surfaces here instead of mid-Send.
 func TestSPAccountRoundTrip(t *testing.T) {
 	t.Parallel()
 
@@ -177,22 +128,16 @@ func TestSPAccountRoundTrip(t *testing.T) {
 			t.Parallel()
 
 			plan := &saml2ServiceProviderModel{Account: original}
-			base := &conveniencestorev1.GenerateCreateSAML2ServiceProviderProposalRequest_Base{}
-			gotKind, diags := setAccountOnRequest(ctx, base, plan)
+			sp := &saml2v2.SAML2ServiceProvider{}
+			gotKind, diags := setKnownProviderOnSP(ctx, sp, plan)
 			if diags.HasError() {
-				t.Fatalf("setAccountOnRequest: %v", diags)
+				t.Fatalf("setKnownProviderOnSP: %v", diags)
 			}
 			if gotKind != kind {
-				t.Fatalf("setAccountOnRequest returned kind %q, want %q", gotKind, kind)
+				t.Fatalf("setKnownProviderOnSP returned kind %q, want %q", gotKind, kind)
 			}
-			if base.Account == nil {
-				t.Fatalf("setAccountOnRequest left base.Account nil for kind %q", kind)
-			}
-
-			sp := &saml2v2.SAML2ServiceProvider{}
-			setSAML2SPAccountFromRequest(sp, base.GetAccount())
-			if sp.Account == nil {
-				t.Fatalf("setSAML2SPAccountFromRequest left sp.Account nil for kind %q", kind)
+			if sp.GetKnownProvider().GetUnion() == nil {
+				t.Fatalf("setKnownProviderOnSP left sp.KnownProvider.Union nil for kind %q", kind)
 			}
 
 			var rtDiags diag.Diagnostics

@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"time"
 
-	saml2v1 "github.com/splitsecure/apis/gen/go/proto/splitsecure/saml2/v1"
+	saml2v2 "github.com/splitsecure/apis/gen/go/proto/splitsecure/saml2/v2"
 )
 
 // idpMetadataXML renders the SAML 2.0 EntityDescriptor for an IdPState.
@@ -16,7 +16,7 @@ import (
 // drift on every plan. Mirrors the rendering rules in priv's
 // common/saml2.MetadataOfIDPState; if those diverge, metadata_test.go's
 // golden fixture catches it.
-func idpMetadataXML(idp *saml2v1.IdPState) ([]byte, error) {
+func idpMetadataXML(idp *saml2v2.IdPState) ([]byte, error) {
 	wantAuthnRequestsSigned := false
 	descriptor := idpSSODescriptor{
 		ProtocolSupportEnumeration: "urn:oasis:names:tc:SAML:2.0:protocol",
