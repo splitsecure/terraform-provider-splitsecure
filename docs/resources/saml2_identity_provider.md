@@ -49,3 +49,7 @@ resource "splitsecure_saml2_identity_provider" "aws_console" {
 
 - `id` (String) Resource s2r URI of the identity provider.
 - `metadata_xml` (String) SAML IdP metadata document built from the IdP's signing certificate, provider_id, and SSO URLs. Suitable for aws_iam_saml_provider.
+- `signing_certificate_der` (String) Base64-encoded DER X.509 signing certificate -- the same bytes as the contents of `signing_certificate_pem` between its BEGIN/END markers. Use this when a downstream consumer wants the unwrapped certificate body (e.g. the `<X509Certificate>` element of an SP metadata document).
+- `signing_certificate_pem` (String) PEM-encoded X.509 signing certificate the IdP attaches to assertions. Suitable for SPs that take the raw certificate (e.g. tls_certificate-style consumers, custom SAML stacks).
+- `signing_public_key_der` (String) Base64-encoded SubjectPublicKeyInfo DER -- the bytes between the BEGIN/END markers of `signing_public_key_pem`.
+- `signing_public_key_pem` (String) PEM-encoded SubjectPublicKeyInfo extracted from the signing certificate. Suitable for SPs that pin a bare public key rather than the wrapping certificate.
