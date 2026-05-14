@@ -45,7 +45,7 @@ func TestIDPSchema_ComputedAttributes(t *testing.T) {
 
 	s := schemaForResource(t, &saml2IdentityProvider{})
 
-	for _, name := range []string{"id", "metadata_xml"} {
+	for _, name := range []string{"id", "metadata_xml", "signing_certificate_pem", "signing_certificate_der", "signing_public_key_pem", "signing_public_key_der"} {
 		attr, ok := s.Attributes[name]
 		if !ok {
 			t.Fatalf("computed attribute %q missing from IdP schema", name)

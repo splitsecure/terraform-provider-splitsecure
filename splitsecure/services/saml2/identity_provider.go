@@ -2,6 +2,9 @@ package saml2
 
 import (
 	"context"
+	"crypto/x509"
+	"encoding/base64"
+	"encoding/pem"
 	"fmt"
 	"strings"
 
@@ -33,16 +36,20 @@ type saml2IdentityProvider struct {
 }
 
 type saml2IdentityProviderModel struct {
-	ID                 types.String `tfsdk:"id"`
-	TeamS2R            types.String `tfsdk:"team_s2r"`
-	ProviderID         types.String `tfsdk:"provider_id"`
-	Name               types.String `tfsdk:"name"`
-	Description        types.String `tfsdk:"description"`
-	NotificationPolicy types.String `tfsdk:"notification_policy"`
-	SSOURL             types.String `tfsdk:"sso_url"`
-	SSOURLPost         types.String `tfsdk:"sso_url_post"`
-	Justification      types.String `tfsdk:"justification"`
-	MetadataXML        types.String `tfsdk:"metadata_xml"`
+	ID                    types.String `tfsdk:"id"`
+	TeamS2R               types.String `tfsdk:"team_s2r"`
+	ProviderID            types.String `tfsdk:"provider_id"`
+	Name                  types.String `tfsdk:"name"`
+	Description           types.String `tfsdk:"description"`
+	NotificationPolicy    types.String `tfsdk:"notification_policy"`
+	SSOURL                types.String `tfsdk:"sso_url"`
+	SSOURLPost            types.String `tfsdk:"sso_url_post"`
+	Justification         types.String `tfsdk:"justification"`
+	MetadataXML           types.String `tfsdk:"metadata_xml"`
+	SigningCertificatePEM types.String `tfsdk:"signing_certificate_pem"`
+	SigningCertificateDER types.String `tfsdk:"signing_certificate_der"`
+	SigningPublicKeyPEM   types.String `tfsdk:"signing_public_key_pem"`
+	SigningPublicKeyDER   types.String `tfsdk:"signing_public_key_der"`
 }
 
 // NewIdentityProvider returns a factory for the SAML2 IdP resource.
@@ -153,6 +160,24 @@ func (r *saml2IdentityProvider) Schema(_ context.Context, _ resource.SchemaReque
 			"metadata_xml": schema.StringAttribute{
 				Computed:    true,
 				Description: "SAML IdP metadata document built from the IdP's signing certificate, provider_id, and SSO URLs. Suitable for aws_iam_saml_provider.",
+			},
+			"signing_certificate_pem": schema.StringAttribute{
+				Computed:    true,
+				Description: "PEM-encoded X.509 signing certificate the IdP attaches to assertions. Suitable for SPs that take the raw certificate (e.g. tls_certificate-style consumers, custom SAML stacks).",
+			},
+			"signing_certificate_der": schema.StringAttribute{
+				Computed: true,
+				Description: "Base64-encoded DER X.509 signing certificate -- the same bytes as the contents of `signing_certificate_pem` between its " +
+					"BEGIN/END markers. Use this when a downstream consumer wants the unwrapped certificate body " +
+					"(e.g. the `<X509Certificate>` element of an SP metadata document).",
+			},
+			"signing_public_key_pem": schema.StringAttribute{
+				Computed:    true,
+				Description: "PEM-encoded SubjectPublicKeyInfo extracted from the signing certificate. Suitable for SPs that pin a bare public key rather than the wrapping certificate.",
+			},
+			"signing_public_key_der": schema.StringAttribute{
+				Computed:    true,
+				Description: "Base64-encoded SubjectPublicKeyInfo DER -- the bytes between the BEGIN/END markers of `signing_public_key_pem`.",
 			},
 		},
 	}
@@ -341,6 +366,30 @@ func populateIDPModel(m *saml2IdentityProviderModel, resourceS2R string, rec *co
 		return d
 	}
 	m.MetadataXML = types.StringValue(string(xmlBytes))
+
+	der := idp.GetX509Certificate()
+	m.SigningCertificateDER = types.StringValue(base64.StdEncoding.EncodeToString(der))
+	m.SigningCertificatePEM = types.StringValue(string(pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der})))
+
+	// Cert parse + SPKI marshal cannot realistically fail here -- idpMetadataXML
+	// already required a parseable cert -- but surface errors explicitly rather
+	// than silently producing empty public-key attributes.
+	cert, err := x509.ParseCertificate(der)
+	if err != nil {
+		var d diag.Diagnostics
+		d.AddError("Parsing SAML2 IdP signing certificate", err.Error())
+
+		return d
+	}
+	spkiDER, err := x509.MarshalPKIXPublicKey(cert.PublicKey)
+	if err != nil {
+		var d diag.Diagnostics
+		d.AddError("Marshaling SAML2 IdP signing public key", err.Error())
+
+		return d
+	}
+	m.SigningPublicKeyDER = types.StringValue(base64.StdEncoding.EncodeToString(spkiDER))
+	m.SigningPublicKeyPEM = types.StringValue(string(pem.EncodeToMemory(&pem.Block{Type: "PUBLIC KEY", Bytes: spkiDER})))
 
 	return nil
 }
