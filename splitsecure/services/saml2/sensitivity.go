@@ -1,6 +1,6 @@
 package saml2
 
-import teamresourcev1 "github.com/splitsecure/terraform-provider-splitsecure/gen/go/proto/splitsecure/teamresource/v1"
+import teamresourcev1 "github.com/splitsecure/apis/gen/go/proto/splitsecure/teamresource/v1"
 
 // HCL surface for teamresource.v1.AccountSensitivityLevel. Strings
 // match the proto enum suffix in lower_snake_case so the OneOf

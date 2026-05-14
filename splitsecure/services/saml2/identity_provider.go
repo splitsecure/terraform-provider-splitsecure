@@ -17,9 +17,9 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	"google.golang.org/protobuf/proto"
 
-	conveniencestorev1 "github.com/splitsecure/terraform-provider-splitsecure/gen/go/proto/splitsecure/conveniencestore/v1"
-	saml2v1 "github.com/splitsecure/terraform-provider-splitsecure/gen/go/proto/splitsecure/enclaveservices/saml2/v1"
-	teamresourcev1 "github.com/splitsecure/terraform-provider-splitsecure/gen/go/proto/splitsecure/teamresource/v1"
+	conveniencestorev1 "github.com/splitsecure/apis/gen/go/proto/splitsecure/conveniencestore/v1"
+	saml2v2 "github.com/splitsecure/apis/gen/go/proto/splitsecure/saml2/v2"
+	teamresourcev1 "github.com/splitsecure/apis/gen/go/proto/splitsecure/teamresource/v1"
 	"github.com/splitsecure/terraform-provider-splitsecure/splitsecure/client"
 )
 
@@ -177,14 +177,16 @@ func (r *saml2IdentityProvider) Create(ctx context.Context, req resource.CreateR
 	genResp, err := r.client.ConvenienceStoreService.GenerateCreateSAML2IdentityProviderProposal(ctx, connect.NewRequest(&conveniencestorev1.GenerateCreateSAML2IdentityProviderProposalRequest{
 		Base: &conveniencestorev1.GenerateCreateSAML2IdentityProviderProposalRequest_Base{
 			TeamS2R: plan.TeamS2R.ValueString(),
-			Attributes: &teamresourcev1.BaseResourceAttributes{
-				Name:               plan.Name.ValueString(),
-				Description:        plan.Description.ValueString(),
-				NotificationPolicy: notificationPolicyFromString(plan.NotificationPolicy.ValueString()),
+			Idp: &saml2v2.IdPState{
+				ProviderId: plan.ProviderID.ValueString(),
+				SsoUrl:     plan.SSOURL.ValueString(),
+				SsoUrlPost: plan.SSOURLPost.ValueString(),
+				BaseResourceAttributes: &teamresourcev1.BaseResourceAttributes{
+					Name:               plan.Name.ValueString(),
+					Description:        plan.Description.ValueString(),
+					NotificationPolicy: notificationPolicyFromString(plan.NotificationPolicy.ValueString()),
+				},
 			},
-			ProviderId:    plan.ProviderID.ValueString(),
-			SsoUrl:        plan.SSOURL.ValueString(),
-			SsoUrlPost:    plan.SSOURLPost.ValueString(),
 			Justification: config.Justification.ValueString(),
 		},
 	}))
@@ -301,17 +303,13 @@ func (r *saml2IdentityProvider) ImportState(ctx context.Context, req resource.Im
 func populateIDPModel(m *saml2IdentityProviderModel, resourceS2R string, rec *conveniencestorev1.SAML2ResourceRecord) diag.Diagnostics {
 	signed := rec.GetContent().GetUpdateableRecord().GetContent().GetSignedIdp()
 	if signed == nil {
-		// Fallback for legacy top-level record variants.
-		signed = rec.GetSignedIdp()
-	}
-	if signed == nil {
 		var d diag.Diagnostics
 		d.AddError("Decoding SAML2 IdP", "record has no signed_idp content")
 
 		return d
 	}
 
-	var state saml2v1.IdPStateAndKey
+	var state saml2v2.IdPStateAndKey
 	err := proto.Unmarshal(signed.GetAuthenticated(), &state)
 	if err != nil {
 		var d diag.Diagnostics
@@ -325,10 +323,11 @@ func populateIDPModel(m *saml2IdentityProviderModel, resourceS2R string, rec *co
 	if teamS2R := teamS2RFromResourceS2R(resourceS2R); teamS2R != "" {
 		m.TeamS2R = types.StringValue(teamS2R)
 	}
+	bra := idp.GetBaseResourceAttributes()
 	m.ProviderID = types.StringValue(idp.GetProviderId())
-	m.Name = types.StringValue(idp.GetName())
-	m.Description = types.StringValue(idp.GetDescription())
-	m.NotificationPolicy = types.StringValue(notificationPolicyToString(idp.GetNotificationPolicy()))
+	m.Name = types.StringValue(bra.GetName())
+	m.Description = types.StringValue(bra.GetDescription())
+	m.NotificationPolicy = types.StringValue(notificationPolicyToString(bra.GetNotificationPolicy()))
 	m.SSOURL = types.StringValue(idp.GetSsoUrl())
 	m.SSOURLPost = types.StringValue(idp.GetSsoUrlPost())
 

@@ -18,9 +18,10 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	"google.golang.org/protobuf/proto"
 
-	conveniencestorev1 "github.com/splitsecure/terraform-provider-splitsecure/gen/go/proto/splitsecure/conveniencestore/v1"
-	saml2v2 "github.com/splitsecure/terraform-provider-splitsecure/gen/go/proto/splitsecure/enclaveservices/saml2/v2"
-	teamresourcev1 "github.com/splitsecure/terraform-provider-splitsecure/gen/go/proto/splitsecure/teamresource/v1"
+	conveniencestorev1 "github.com/splitsecure/apis/gen/go/proto/splitsecure/conveniencestore/v1"
+	saml2v2 "github.com/splitsecure/apis/gen/go/proto/splitsecure/saml2/v2"
+	providersv1 "github.com/splitsecure/apis/gen/go/proto/splitsecure/saml2/v2/providers/v1"
+	teamresourcev1 "github.com/splitsecure/apis/gen/go/proto/splitsecure/teamresource/v1"
 	"github.com/splitsecure/terraform-provider-splitsecure/splitsecure/client"
 )
 
@@ -605,28 +606,28 @@ func (r *saml2ServiceProvider) Create(ctx context.Context, req resource.CreateRe
 		return
 	}
 
-	base := &conveniencestorev1.GenerateCreateSAML2ServiceProviderProposalRequest_Base{
-		TeamS2R:        plan.TeamS2R.ValueString(),
-		IdpResourceS2R: plan.IdpResourceS2R.ValueString(),
-		Attributes: &teamresourcev1.BaseResourceAttributes{
+	sp := &saml2v2.SAML2ServiceProvider{
+		BaseResourceAttributes: &teamresourcev1.BaseResourceAttributes{
 			Name:               plan.Name.ValueString(),
 			Description:        plan.Description.ValueString(),
 			NotificationPolicy: notificationPolicyFromString(plan.NotificationPolicy.ValueString()),
 			Sensitivity:        sensitivityFromString(plan.Sensitivity.ValueString()),
 		},
-		EntityId:      plan.EntityID.ValueString(),
-		AcsUrl:        plan.ACSURL.ValueString(),
-		Justification: config.Justification.ValueString(),
+		Metadata: spMetadataFromPlan(plan.EntityID.ValueString(), plan.ACSURL.ValueString()),
 	}
-
-	accountType, diags := setAccountOnRequest(ctx, base, &plan)
+	accountType, diags := setKnownProviderOnSP(ctx, sp, &plan)
 	resp.Diagnostics.Append(diags...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
 
 	genResp, err := r.client.ConvenienceStoreService.GenerateCreateSAML2ServiceProviderProposal(ctx, connect.NewRequest(&conveniencestorev1.GenerateCreateSAML2ServiceProviderProposalRequest{
-		Base: base,
+		Base: &conveniencestorev1.GenerateCreateSAML2ServiceProviderProposalRequest_Base{
+			TeamS2R:        plan.TeamS2R.ValueString(),
+			IdpResourceS2R: plan.IdpResourceS2R.ValueString(),
+			Sp:             sp,
+			Justification:  config.Justification.ValueString(),
+		},
 	}))
 	if err != nil {
 		resp.Diagnostics.AddError("GenerateCreateSAML2ServiceProviderProposal", err.Error())
@@ -725,14 +726,37 @@ func (r *saml2ServiceProvider) ImportState(ctx context.Context, req resource.Imp
 	resource.ImportStatePassthroughID(ctx, path.Root("id"), req, resp)
 }
 
-// setAccountOnRequest assigns the per-integration account oneof on the
-// request from the plan's account block. Returns the kind string used
-// for the account_type computed attribute. The request's account oneof
-// reuses the saml2v2 nested per-integration types directly, so each
-// branch is a thin wrap.
+// spMetadataFromPlan builds a partial SAML 2.0 Metadata payload from
+// the two HCL strings the resource exposes: entity_id and acs_url. The
+// server stamps the remainder (signing cert, IdP-side fields) when it
+// finalizes the SP record.
+func spMetadataFromPlan(entityID, acsURL string) *saml2v2.Metadata {
+	md := &saml2v2.Metadata{
+		Content: &saml2v2.Metadata_EntityDescriptor{
+			EntityDescriptor: &saml2v2.EntityDescriptor{EntityId: entityID},
+		},
+	}
+	if acsURL == "" {
+		return md
+	}
+	md.GetEntityDescriptor().SpSsoDescriptor = []*saml2v2.SPSSODescriptor{{
+		AssertionConsumerService: []*saml2v2.IndexedEndpoint{{
+			Base: &saml2v2.Endpoint{
+				Binding:  "urn:oasis:names:tc:SAML:2.0:bindings:HTTP-POST",
+				Location: acsURL,
+			},
+		}},
+	}}
+
+	return md
+}
+
+// setKnownProviderOnSP assigns the per-integration KnownProvider variant
+// on the SP from the plan's account block. Returns the kind string used
+// for the account_type computed attribute.
 //
 //nolint:cyclop // one branch per account variant; refactoring per-variant helpers would hurt readability.
-func setAccountOnRequest(ctx context.Context, base *conveniencestorev1.GenerateCreateSAML2ServiceProviderProposalRequest_Base, plan *saml2ServiceProviderModel) (string, diag.Diagnostics) {
+func setKnownProviderOnSP(ctx context.Context, sp *saml2v2.SAML2ServiceProvider, plan *saml2ServiceProviderModel) (string, diag.Diagnostics) {
 	var diags diag.Diagnostics
 	if plan.Account == nil {
 		diags.AddError("account is required", "account block must be set with a kind")
@@ -746,52 +770,53 @@ func setAccountOnRequest(ctx context.Context, base *conveniencestorev1.GenerateC
 		return "", diags
 	}
 
+	kp := &providersv1.KnownProvider{}
 	switch kind {
 	case kindAWS:
-		base.Account = &conveniencestorev1.GenerateCreateSAML2ServiceProviderProposalRequest_Base_Aws{Aws: &saml2v2.SAML2ServiceProvider_AWS{
+		kp.Union = &providersv1.KnownProvider_Aws{Aws: &providersv1.AWS{
 			SamlProviderArn: plan.Account.AWS.SAMLProviderARN.ValueString(),
 			AllowedRoleArns: listToStrings(ctx, plan.Account.AWS.AllowedRoleARNs, &diags),
 		}}
 	case kindCloudflare:
-		base.Account = &conveniencestorev1.GenerateCreateSAML2ServiceProviderProposalRequest_Base_Cloudflare{Cloudflare: &saml2v2.SAML2ServiceProvider_Cloudflare{
+		kp.Union = &providersv1.KnownProvider_Cloudflare{Cloudflare: &providersv1.Cloudflare{
 			SsoEndpoint:  plan.Account.Cloudflare.SSOEndpoint.ValueString(),
 			DefaultEmail: plan.Account.Cloudflare.DefaultEmail.ValueString(),
 		}}
 	case kindEventBrite:
-		base.Account = &conveniencestorev1.GenerateCreateSAML2ServiceProviderProposalRequest_Base_EventBrite{EventBrite: &saml2v2.SAML2ServiceProvider_EventBrite{}}
+		kp.Union = &providersv1.KnownProvider_EventBrite{EventBrite: &providersv1.EventBrite{}}
 	case kindGCP:
-		base.Account = &conveniencestorev1.GenerateCreateSAML2ServiceProviderProposalRequest_Base_Gcp{Gcp: &saml2v2.SAML2ServiceProvider_GCP{
+		kp.Union = &providersv1.KnownProvider_Gcp{Gcp: &providersv1.GCP{
 			DefaultEmail: plan.Account.GCP.DefaultEmail.ValueString(),
 		}}
 	case kindGoogleWorkspace:
-		base.Account = &conveniencestorev1.GenerateCreateSAML2ServiceProviderProposalRequest_Base_GoogleWorkspace{GoogleWorkspace: &saml2v2.SAML2ServiceProvider_GoogleWorkspace{}}
+		kp.Union = &providersv1.KnownProvider_GoogleWorkspace{GoogleWorkspace: &providersv1.GoogleWorkspace{}}
 	case kindGoogleWorkspaceLegacy:
-		base.Account = &conveniencestorev1.GenerateCreateSAML2ServiceProviderProposalRequest_Base_GoogleWorkspaceLegacy{GoogleWorkspaceLegacy: &saml2v2.SAML2ServiceProvider_GoogleWorkspaceLegacy{
+		kp.Union = &providersv1.KnownProvider_GoogleWorkspaceLegacy{GoogleWorkspaceLegacy: &providersv1.GoogleWorkspaceLegacy{
 			DefaultEmail: plan.Account.GoogleWorkspaceLegacy.DefaultEmail.ValueString(),
 			DomainName:   plan.Account.GoogleWorkspaceLegacy.DomainName.ValueString(),
 		}}
 	case kindIBMCloud:
-		base.Account = &conveniencestorev1.GenerateCreateSAML2ServiceProviderProposalRequest_Base_IbmCloud{IbmCloud: &saml2v2.SAML2ServiceProvider_IBMCloud{
+		kp.Union = &providersv1.KnownProvider_IbmCloud{IbmCloud: &providersv1.IBMCloud{
 			LoginUrl: plan.Account.IBMCloud.LoginURL.ValueString(),
 		}}
 	case kindKandji:
-		base.Account = &conveniencestorev1.GenerateCreateSAML2ServiceProviderProposalRequest_Base_Kandji{Kandji: &saml2v2.SAML2ServiceProvider_Kandji{
+		kp.Union = &providersv1.KnownProvider_Kandji{Kandji: &providersv1.Kandji{
 			DefaultEmail: plan.Account.Kandji.DefaultEmail.ValueString(),
 		}}
 	case kindMicrosoftEntraID:
-		base.Account = &conveniencestorev1.GenerateCreateSAML2ServiceProviderProposalRequest_Base_MicrosoftEntraId{MicrosoftEntraId: &saml2v2.SAML2ServiceProvider_MicrosoftEntraID{}}
+		kp.Union = &providersv1.KnownProvider_MicrosoftEntraId{MicrosoftEntraId: &providersv1.MicrosoftEntraID{}}
 	case kindOkta:
-		base.Account = &conveniencestorev1.GenerateCreateSAML2ServiceProviderProposalRequest_Base_Okta{Okta: &saml2v2.SAML2ServiceProvider_Okta{
+		kp.Union = &providersv1.KnownProvider_Okta{Okta: &providersv1.Okta{
 			AllowedEmails: listToStrings(ctx, plan.Account.Okta.AllowedEmails, &diags),
 		}}
 	case kindOracleCloud:
-		base.Account = &conveniencestorev1.GenerateCreateSAML2ServiceProviderProposalRequest_Base_OracleCloud{OracleCloud: &saml2v2.SAML2ServiceProvider_OracleCloud{}}
+		kp.Union = &providersv1.KnownProvider_OracleCloud{OracleCloud: &providersv1.OracleCloud{}}
 	case kindPagerDuty:
-		base.Account = &conveniencestorev1.GenerateCreateSAML2ServiceProviderProposalRequest_Base_PagerDuty{PagerDuty: &saml2v2.SAML2ServiceProvider_PagerDuty{}}
+		kp.Union = &providersv1.KnownProvider_PagerDuty{PagerDuty: &providersv1.PagerDuty{}}
 	case kindPitchBook:
-		base.Account = &conveniencestorev1.GenerateCreateSAML2ServiceProviderProposalRequest_Base_PitchBook{PitchBook: &saml2v2.SAML2ServiceProvider_PitchBook{}}
+		kp.Union = &providersv1.KnownProvider_PitchBook{PitchBook: &providersv1.PitchBook{}}
 	case kindRapid7:
-		base.Account = &conveniencestorev1.GenerateCreateSAML2ServiceProviderProposalRequest_Base_Rapid7{Rapid7: &saml2v2.SAML2ServiceProvider_Rapid7{
+		kp.Union = &providersv1.KnownProvider_Rapid7{Rapid7: &providersv1.Rapid7{
 			DefaultRelayState: plan.Account.Rapid7.DefaultRelayState.ValueString(),
 			DefaultEmail:      plan.Account.Rapid7.DefaultEmail.ValueString(),
 			DefaultFirstName:  plan.Account.Rapid7.DefaultFirstName.ValueString(),
@@ -799,18 +824,19 @@ func setAccountOnRequest(ctx context.Context, base *conveniencestorev1.GenerateC
 			DefaultRbacGroups: listToStrings(ctx, plan.Account.Rapid7.DefaultRBACGroups, &diags),
 		}}
 	case kindStripe:
-		base.Account = &conveniencestorev1.GenerateCreateSAML2ServiceProviderProposalRequest_Base_Stripe{Stripe: &saml2v2.SAML2ServiceProvider_Stripe{
+		kp.Union = &providersv1.KnownProvider_Stripe{Stripe: &providersv1.Stripe{
 			AccountId: plan.Account.Stripe.AccountID.ValueString(),
 		}}
 	case kindVeeam:
-		base.Account = &conveniencestorev1.GenerateCreateSAML2ServiceProviderProposalRequest_Base_Veeam{Veeam: &saml2v2.SAML2ServiceProvider_Veeam{}}
+		kp.Union = &providersv1.KnownProvider_Veeam{Veeam: &providersv1.Veeam{}}
 	case kindWorkday:
-		base.Account = &conveniencestorev1.GenerateCreateSAML2ServiceProviderProposalRequest_Base_Workday{Workday: &saml2v2.SAML2ServiceProvider_Workday{}}
+		kp.Union = &providersv1.KnownProvider_Workday{Workday: &providersv1.Workday{}}
 	default:
 		diags.AddError("unknown account variant", kind)
 
 		return "", diags
 	}
+	sp.KnownProvider = kp
 
 	return kind, diags
 }
@@ -829,10 +855,6 @@ func populateSPModel(ctx context.Context, m *saml2ServiceProviderModel, resource
 
 	signed := rec.GetContent().GetUpdateableRecord().GetContent().GetSignedServiceProvider()
 	if signed == nil {
-		//nolint:staticcheck // fallback for legacy top-level record variant
-		signed = rec.GetSignedServiceProvider()
-	}
-	if signed == nil {
 		m.AccountType = types.StringValue(accountType)
 
 		return
@@ -850,10 +872,11 @@ func populateSPModel(ctx context.Context, m *saml2ServiceProviderModel, resource
 	// record only carries idp_coord_id_hint (raw IdP id), whose encoding
 	// doesn't round-trip cleanly into an s2r URI without the obfuscation
 	// helpers. Bare imports leave it empty until the user populates HCL.
-	m.Name = types.StringValue(sp.GetName())
-	m.Description = types.StringValue(sp.GetDescription())
-	m.NotificationPolicy = types.StringValue(notificationPolicyToString(sp.GetNotificationPolicy()))
-	m.Sensitivity = types.StringValue(sensitivityLevelToString(sp.GetSensitivity().GetLevel()))
+	attrs := sp.GetBaseResourceAttributes()
+	m.Name = types.StringValue(attrs.GetName())
+	m.Description = types.StringValue(attrs.GetDescription())
+	m.NotificationPolicy = types.StringValue(notificationPolicyToString(attrs.GetNotificationPolicy()))
+	m.Sensitivity = types.StringValue(sensitivityLevelToString(attrs.GetSensitivity().GetLevel()))
 	m.EntityID = types.StringValue(sp.GetMetadata().GetEntityDescriptor().GetEntityId())
 	if descs := sp.GetMetadata().GetEntityDescriptor().GetSpSsoDescriptor(); len(descs) > 0 {
 		if endpoints := descs[0].GetAssertionConsumerService(); len(endpoints) > 0 {
@@ -870,17 +893,16 @@ func populateSPModel(ctx context.Context, m *saml2ServiceProviderModel, resource
 }
 
 // accountFromSP rebuilds the typed account block from the SP record's
-// authenticated state. Mirrors setAccountOnRequest in reverse: walks
-// the saml2v2 oneof, populates the matching sub-block, sets Kind. The
-// per-list-variant fields (AWS allowed_role_arns, Okta allowed_emails,
-// Rapid7 default_rbac_groups) round-trip via stringsToList. Returns
-// (nil, "") for unknown / unset variants so the caller falls back to
-// preserving plan-state.
+// authenticated state. Walks the KnownProvider union and populates the
+// matching sub-block. The per-list-variant fields (AWS allowed_role_arns,
+// Okta allowed_emails, Rapid7 default_rbac_groups) round-trip via
+// stringsToList. Returns (nil, "") for unknown / unset variants so the
+// caller falls back to preserving plan-state.
 //
 //nolint:cyclop // one branch per account variant; collapsing them obscures the round-trip.
 func accountFromSP(ctx context.Context, sp *saml2v2.SAML2ServiceProvider, diags *diag.Diagnostics) (*accountModel, string) {
-	switch a := sp.GetAccount().(type) {
-	case *saml2v2.SAML2ServiceProvider_Aws:
+	switch a := sp.GetKnownProvider().GetUnion().(type) {
+	case *providersv1.KnownProvider_Aws:
 		return &accountModel{
 			Kind: types.StringValue(kindAWS),
 			AWS: &accountAWSModel{
@@ -888,7 +910,7 @@ func accountFromSP(ctx context.Context, sp *saml2v2.SAML2ServiceProvider, diags 
 				AllowedRoleARNs: stringsToList(ctx, a.Aws.GetAllowedRoleArns(), diags),
 			},
 		}, kindAWS
-	case *saml2v2.SAML2ServiceProvider_Cloudflare_:
+	case *providersv1.KnownProvider_Cloudflare:
 		return &accountModel{
 			Kind: types.StringValue(kindCloudflare),
 			Cloudflare: &accountCloudflareModel{
@@ -896,16 +918,16 @@ func accountFromSP(ctx context.Context, sp *saml2v2.SAML2ServiceProvider, diags 
 				DefaultEmail: types.StringValue(a.Cloudflare.GetDefaultEmail()),
 			},
 		}, kindCloudflare
-	case *saml2v2.SAML2ServiceProvider_EventBrite_:
+	case *providersv1.KnownProvider_EventBrite:
 		return &accountModel{Kind: types.StringValue(kindEventBrite), EventBrite: &accountEventBriteModel{}}, kindEventBrite
-	case *saml2v2.SAML2ServiceProvider_Gcp:
+	case *providersv1.KnownProvider_Gcp:
 		return &accountModel{
 			Kind: types.StringValue(kindGCP),
 			GCP:  &accountGCPModel{DefaultEmail: types.StringValue(a.Gcp.GetDefaultEmail())},
 		}, kindGCP
-	case *saml2v2.SAML2ServiceProvider_GoogleWorkspace_:
+	case *providersv1.KnownProvider_GoogleWorkspace:
 		return &accountModel{Kind: types.StringValue(kindGoogleWorkspace), GoogleWorkspace: &accountGoogleWorkspaceModel{}}, kindGoogleWorkspace
-	case *saml2v2.SAML2ServiceProvider_GoogleWorkspaceLegacy_:
+	case *providersv1.KnownProvider_GoogleWorkspaceLegacy:
 		return &accountModel{
 			Kind: types.StringValue(kindGoogleWorkspaceLegacy),
 			GoogleWorkspaceLegacy: &accountGoogleWorkspaceLegacyModel{
@@ -913,30 +935,30 @@ func accountFromSP(ctx context.Context, sp *saml2v2.SAML2ServiceProvider, diags 
 				DomainName:   types.StringValue(a.GoogleWorkspaceLegacy.GetDomainName()),
 			},
 		}, kindGoogleWorkspaceLegacy
-	case *saml2v2.SAML2ServiceProvider_IbmCloud:
+	case *providersv1.KnownProvider_IbmCloud:
 		return &accountModel{
 			Kind:     types.StringValue(kindIBMCloud),
 			IBMCloud: &accountIBMCloudModel{LoginURL: types.StringValue(a.IbmCloud.GetLoginUrl())},
 		}, kindIBMCloud
-	case *saml2v2.SAML2ServiceProvider_Kandji_:
+	case *providersv1.KnownProvider_Kandji:
 		return &accountModel{
 			Kind:   types.StringValue(kindKandji),
 			Kandji: &accountKandjiModel{DefaultEmail: types.StringValue(a.Kandji.GetDefaultEmail())},
 		}, kindKandji
-	case *saml2v2.SAML2ServiceProvider_MicrosoftEntraId:
+	case *providersv1.KnownProvider_MicrosoftEntraId:
 		return &accountModel{Kind: types.StringValue(kindMicrosoftEntraID), MicrosoftEntraID: &accountMicrosoftEntraIDModel{}}, kindMicrosoftEntraID
-	case *saml2v2.SAML2ServiceProvider_Okta_:
+	case *providersv1.KnownProvider_Okta:
 		return &accountModel{
 			Kind: types.StringValue(kindOkta),
 			Okta: &accountOktaModel{AllowedEmails: stringsToList(ctx, a.Okta.GetAllowedEmails(), diags)},
 		}, kindOkta
-	case *saml2v2.SAML2ServiceProvider_OracleCloud_:
+	case *providersv1.KnownProvider_OracleCloud:
 		return &accountModel{Kind: types.StringValue(kindOracleCloud), OracleCloud: &accountOracleCloudModel{}}, kindOracleCloud
-	case *saml2v2.SAML2ServiceProvider_PagerDuty_:
+	case *providersv1.KnownProvider_PagerDuty:
 		return &accountModel{Kind: types.StringValue(kindPagerDuty), PagerDuty: &accountPagerDutyModel{}}, kindPagerDuty
-	case *saml2v2.SAML2ServiceProvider_PitchBook_:
+	case *providersv1.KnownProvider_PitchBook:
 		return &accountModel{Kind: types.StringValue(kindPitchBook), PitchBook: &accountPitchBookModel{}}, kindPitchBook
-	case *saml2v2.SAML2ServiceProvider_Rapid7_:
+	case *providersv1.KnownProvider_Rapid7:
 		return &accountModel{
 			Kind: types.StringValue(kindRapid7),
 			Rapid7: &accountRapid7Model{
@@ -947,14 +969,14 @@ func accountFromSP(ctx context.Context, sp *saml2v2.SAML2ServiceProvider, diags 
 				DefaultRBACGroups: stringsToList(ctx, a.Rapid7.GetDefaultRbacGroups(), diags),
 			},
 		}, kindRapid7
-	case *saml2v2.SAML2ServiceProvider_Stripe_:
+	case *providersv1.KnownProvider_Stripe:
 		return &accountModel{
 			Kind:   types.StringValue(kindStripe),
 			Stripe: &accountStripeModel{AccountID: types.StringValue(a.Stripe.GetAccountId())},
 		}, kindStripe
-	case *saml2v2.SAML2ServiceProvider_Veeam_:
+	case *providersv1.KnownProvider_Veeam:
 		return &accountModel{Kind: types.StringValue(kindVeeam), Veeam: &accountVeeamModel{}}, kindVeeam
-	case *saml2v2.SAML2ServiceProvider_Workday_:
+	case *providersv1.KnownProvider_Workday:
 		return &accountModel{Kind: types.StringValue(kindWorkday), Workday: &accountWorkdayModel{}}, kindWorkday
 	}
 

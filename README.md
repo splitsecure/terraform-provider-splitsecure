@@ -59,15 +59,6 @@ terraform destroy -auto-approve
 
 ## Development
 
-### Proto sync
-
-The provider ships an allowlisted subset of `.proto` definitions, plus three slim provider-owned services (so threshold/bottle/hybridkeyset transitive deps don't end up in the build).
-
-```bash
-./scripts/sync-protos.sh /path/to/source/apis/proto
-buf generate
-```
-
 ### Build
 
 ```bash
