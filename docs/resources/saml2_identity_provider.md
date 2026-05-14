@@ -18,11 +18,10 @@ resource "splitsecure_saml2_identity_provider" "aws_console" {
 
   name        = "platform-engineering/aws-123456789012"
   description = "SAML IdP fronting AWS account 123456789012."
-  # provider_id (SAML EntityID), sso_url, sso_url_post all default
-  # server-side: the EntityID becomes a six-BIP39-word URL (matches
-  # the web UI) and the SSO URLs anchor on the deployment's
-  # frontend host. Set explicitly only for a stable URN-form EntityID
-  # or a non-default SSO host.
+  # provider_id (SAML EntityID) defaults to a six-BIP39-word URL
+  # (matches the web UI). Set explicitly for a stable URN-form
+  # EntityID. sso_url_redirect and sso_url_post are server-assigned
+  # (read-only) and anchor on the deployment's frontend host.
 }
 ```
 
@@ -42,8 +41,6 @@ resource "splitsecure_saml2_identity_provider" "aws_console" {
 - `justification` (String, [Write-only](https://developer.hashicorp.com/terraform/language/resources/ephemeral#write-only-arguments)) Justification text rendered to voters during the create proposal. Write-only -- never persisted to state. The delete proposal sends a generated 'terraform destroy' justification, so callers don't need to keep this set after the resource exists.
 - `notification_policy` (String) Notification policy for proposals against this IdP. One of: notify_everyone, allow_selective_notifications. Defaults to "notify_everyone".
 - `provider_id` (String) SAML EntityID stamped into the cert subject, the assertion <Issuer>, and the metadata entityID. Leave unset to get a server-generated https://<frontend-host>/saml/idp/<six-bip39-words> identifier (matches the web UI). Set explicitly for a stable URN-form EntityID.
-- `sso_url` (String) Single sign-on URL (HTTP-Redirect binding). Server assigns the default when unset.
-- `sso_url_post` (String) Single sign-on URL (HTTP-POST binding).
 
 ### Read-Only
 
@@ -53,3 +50,5 @@ resource "splitsecure_saml2_identity_provider" "aws_console" {
 - `signing_certificate_pem` (String) PEM-encoded X.509 signing certificate the IdP attaches to assertions. Suitable for SPs that take the raw certificate (e.g. tls_certificate-style consumers, custom SAML stacks).
 - `signing_public_key_der` (String) Base64-encoded SubjectPublicKeyInfo DER -- the bytes between the BEGIN/END markers of `signing_public_key_pem`.
 - `signing_public_key_pem` (String) PEM-encoded SubjectPublicKeyInfo extracted from the signing certificate. Suitable for SPs that pin a bare public key rather than the wrapping certificate.
+- `sso_url_post` (String) Single sign-on URL (HTTP-POST binding). Server-assigned; not user-configurable.
+- `sso_url_redirect` (String) Single sign-on URL (HTTP-Redirect binding). Server-assigned; not user-configurable.
