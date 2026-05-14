@@ -42,7 +42,7 @@ type saml2IdentityProviderModel struct {
 	Name                  types.String `tfsdk:"name"`
 	Description           types.String `tfsdk:"description"`
 	NotificationPolicy    types.String `tfsdk:"notification_policy"`
-	SSOURL                types.String `tfsdk:"sso_url"`
+	SSOURLRedirect        types.String `tfsdk:"sso_url_redirect"`
 	SSOURLPost            types.String `tfsdk:"sso_url_post"`
 	Justification         types.String `tfsdk:"justification"`
 	MetadataXML           types.String `tfsdk:"metadata_xml"`
@@ -133,19 +133,15 @@ func (r *saml2IdentityProvider) Schema(_ context.Context, _ resource.SchemaReque
 					stringvalidator.OneOf(notificationPolicyValues()...),
 				},
 			},
-			"sso_url": schema.StringAttribute{
-				Optional:      true,
+			"sso_url_redirect": schema.StringAttribute{
 				Computed:      true,
-				Description:   "Single sign-on URL (HTTP-Redirect binding). Server assigns the default when unset.",
-				PlanModifiers: forceNewString(),
-				Validators:    []validator.String{httpsURLValidator()},
+				Description:   "Single sign-on URL (HTTP-Redirect binding). Server-assigned; not user-configurable.",
+				PlanModifiers: []planmodifier.String{stringplanmodifier.UseStateForUnknown()},
 			},
 			"sso_url_post": schema.StringAttribute{
-				Optional:      true,
 				Computed:      true,
-				Description:   "Single sign-on URL (HTTP-POST binding).",
-				PlanModifiers: forceNewString(),
-				Validators:    []validator.String{httpsURLValidator()},
+				Description:   "Single sign-on URL (HTTP-POST binding). Server-assigned; not user-configurable.",
+				PlanModifiers: []planmodifier.String{stringplanmodifier.UseStateForUnknown()},
 			},
 			"justification": schema.StringAttribute{
 				Optional:  true,
@@ -204,8 +200,6 @@ func (r *saml2IdentityProvider) Create(ctx context.Context, req resource.CreateR
 			TeamS2R: plan.TeamS2R.ValueString(),
 			Idp: &saml2v2.IdPState{
 				ProviderId: plan.ProviderID.ValueString(),
-				SsoUrl:     plan.SSOURL.ValueString(),
-				SsoUrlPost: plan.SSOURLPost.ValueString(),
 				BaseResourceAttributes: &teamresourcev1.BaseResourceAttributes{
 					Name:               plan.Name.ValueString(),
 					Description:        plan.Description.ValueString(),
@@ -353,7 +347,7 @@ func populateIDPModel(m *saml2IdentityProviderModel, resourceS2R string, rec *co
 	m.Name = types.StringValue(bra.GetName())
 	m.Description = types.StringValue(bra.GetDescription())
 	m.NotificationPolicy = types.StringValue(notificationPolicyToString(bra.GetNotificationPolicy()))
-	m.SSOURL = types.StringValue(idp.GetSsoUrl())
+	m.SSOURLRedirect = types.StringValue(idp.GetSsoUrl())
 	m.SSOURLPost = types.StringValue(idp.GetSsoUrlPost())
 
 	// Render metadata_xml from the structured fields. validUntil is
