@@ -1,6 +1,4 @@
-# Copy to terraform.tfvars (gitignored) and fill in your s2r URIs --
-# match the format your existing team / org URIs use.
+# Copy to terraform.tfvars (gitignored) and fill in the s2r URIs.
 
-org_s2r              = "s2r:<deployment>:org:<org_id>"
-engineering_team_s2r = "s2r:<deployment>:team:<engineering_team_id>"
-support_team_s2r     = "s2r:<deployment>:team:<technical_support_team_id>"
+org_s2r  = "s2r:us:org:..."
+team_s2r = "s2r:us:team:..."

@@ -39,7 +39,7 @@ provider "splitsecure" {
 
 ## Full Example
 
-End-to-end wiring: two teams (Engineering and Technical Support) each with a SAML2 IdP, mirrored as `aws_iam_saml_provider` on the AWS side, with IAM roles and team-scoped service providers federated into a single AWS account. Lives at [`examples/full/main.tf`](https://github.com/splitsecure/terraform-provider-splitsecure/tree/main/examples/full) in the repo.
+End-to-end wiring: a SplitSecure team with a SAML2 IdP, mirrored as `aws_iam_saml_provider` on the AWS side, with admin and readonly IAM roles and a single SP allowing federation into both. Lives at [`examples/full/main.tf`](https://github.com/splitsecure/terraform-provider-splitsecure/tree/main/examples/full) in the repo.
 
 ```terraform
 terraform {
@@ -51,10 +51,6 @@ terraform {
       source  = "hashicorp/aws"
       version = "~> 5.0"
     }
-    time = {
-      source  = "hashicorp/time"
-      version = "~> 0.11"
-    }
   }
 }
 
@@ -62,82 +58,47 @@ provider "splitsecure" {
   org_s2r = var.org_s2r
 }
 
-provider "aws" {
-  region = "us-east-1"
-}
+provider "aws" {}
 
 variable "org_s2r" {
   type        = string
-  description = "Org s2r URI hosting the teams below. Used by the provider to spawn the proposal-scoped managed enclave on every Create / Delete."
+  description = "Org s2r URI hosting the team below. Used by the provider to spawn the proposal-scoped managed enclave on every Create / Delete."
 }
 
-variable "engineering_team_s2r" {
+variable "team_s2r" {
   type        = string
-  description = "Team s2r URI for the Engineering team. Voters here approve every Engineering Create / Delete proposal."
+  description = "Team s2r URI that owns the IdP and SP. Voters on this team approve every Create / Delete proposal."
 }
 
-variable "support_team_s2r" {
-  type        = string
-  description = "Team s2r URI for the Technical Support team. Voters here approve every Technical Support Create / Delete proposal."
-}
-
-# Resolve the AWS account the federation lands in.
 data "aws_caller_identity" "current" {}
 
-# Captured the first time `terraform apply` runs and frozen in state
-# from then on.
-resource "time_static" "rollout" {}
-
 locals {
-  account_id   = data.aws_caller_identity.current.account_id
-  rollout_date = formatdate("YYYY-MM-DD", time_static.rollout.rfc3339)
+  account_id = data.aws_caller_identity.current.account_id
 }
 
-# IdPs are per-team: the threshold-signed cert binds to the team's
-# voters, so each team gets its own SAML identity. Engineering and
-# Technical Support each mint their own.
+resource "splitsecure_saml2_identity_provider" "main" {
+  team_s2r = var.team_s2r
 
-resource "splitsecure_saml2_identity_provider" "engineering" {
-  team_s2r = var.engineering_team_s2r
+  name        = "aws-${local.account_id}"
+  description = "SAML IdP from terraform-provider-splitsecure's example plan."
 
-  name        = "engineering/aws-${local.account_id}"
-  description = "Engineering SAML IdP for AWS account ${local.account_id}."
-
-  justification = "Stand up the Engineering IdP for federation into AWS account ${local.account_id}."
+  justification = "Creating SAML IdP from terraform-provider-splitsecure's example plan."
 }
 
-resource "splitsecure_saml2_identity_provider" "support" {
-  team_s2r = var.support_team_s2r
-
-  name        = "support/aws-${local.account_id}"
-  description = "Technical Support SAML IdP for AWS account ${local.account_id}."
-
-  justification = "Stand up the Technical Support IdP for federation into AWS account ${local.account_id}."
+resource "aws_iam_saml_provider" "main" {
+  name                   = "splitsecure-${local.account_id}"
+  saml_metadata_document = splitsecure_saml2_identity_provider.main.metadata_xml
 }
 
-# AWS-side mirrors of each IdP. Distinct ARNs so role trust policies
-# can grant access per-team.
-resource "aws_iam_saml_provider" "engineering" {
-  name                   = "splitsecure-engineering-${local.account_id}"
-  saml_metadata_document = splitsecure_saml2_identity_provider.engineering.metadata_xml
-}
-
-resource "aws_iam_saml_provider" "support" {
-  name                   = "splitsecure-support-${local.account_id}"
-  saml_metadata_document = splitsecure_saml2_identity_provider.support.metadata_xml
-}
-
-# Admin role: only Engineering can assume it. Trust policy lists just
-# the Engineering SAML provider.
 resource "aws_iam_role" "admin" {
   name        = "SplitSecureAdmin-${local.account_id}"
-  description = "Admin role assumed via SplitSecure SAML federation by the Engineering team."
+  description = "Admin role from terraform-provider-splitsecure's example plan."
 
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
     Statement = [{
       Effect    = "Allow"
-      Principal = { Federated = aws_iam_saml_provider.engineering.arn }
+      Principal = { Federated = aws_iam_saml_provider.main.arn }
       Action    = "sts:AssumeRoleWithSAML"
       Condition = {
         StringEquals = { "SAML:aud" = "https://signin.aws.amazon.com/saml" }
@@ -151,24 +112,16 @@ resource "aws_iam_role_policy_attachment" "admin" {
   policy_arn = "arn:aws:iam::aws:policy/AdministratorAccess"
 }
 
-# ReadOnly role: shared between Engineering and Technical
-# Support. Trust policy lists both SAML providers; ReadOnlyAccess
-# attached so it's safe for either team.
 resource "aws_iam_role" "readonly" {
   name        = "SplitSecureReadOnly-${local.account_id}"
-  description = "Read-only readonly role assumed via SplitSecure SAML federation by Engineering or Technical Support."
+  description = "ReadOnly role from terraform-provider-splitsecure's example plan."
 
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
     Statement = [{
-      Effect = "Allow"
-      Principal = {
-        Federated = [
-          aws_iam_saml_provider.engineering.arn,
-          aws_iam_saml_provider.support.arn,
-        ]
-      }
-      Action = "sts:AssumeRoleWithSAML"
+      Effect    = "Allow"
+      Principal = { Federated = aws_iam_saml_provider.main.arn }
+      Action    = "sts:AssumeRoleWithSAML"
       Condition = {
         StringEquals = { "SAML:aud" = "https://signin.aws.amazon.com/saml" }
       }
@@ -181,120 +134,73 @@ resource "aws_iam_role_policy_attachment" "readonly" {
   policy_arn = "arn:aws:iam::aws:policy/ReadOnlyAccess"
 }
 
-# Engineering admin SP. sensitivity = "critical" — voters see the
-# highest classification on every proposal here.
-resource "splitsecure_saml2_service_provider" "engineering_admin" {
-  team_s2r         = var.engineering_team_s2r
-  idp_resource_s2r = splitsecure_saml2_identity_provider.engineering.id
+resource "splitsecure_saml2_service_provider" "main" {
+  team_s2r         = var.team_s2r
+  idp_resource_s2r = splitsecure_saml2_identity_provider.main.id
 
-  name                = "engineering/aws-${local.account_id}-admin"
-  description         = "Engineering admin federation into AWS account ${local.account_id}."
+  name                = "aws-${local.account_id}"
+  description         = "SAML SP from terraform-provider-splitsecure's example plan."
   notification_policy = "notify_everyone"
   sensitivity         = "critical"
   entity_id           = "urn:amazon:webservices"
   acs_url             = "https://signin.aws.amazon.com/saml"
 
-  justification = "Engineering federation to assume ${aws_iam_role.admin.name} in AWS account ${local.account_id}."
+  justification = "Creating SAML SP from terraform-provider-splitsecure's example plan."
 
   account {
     kind = "aws"
     aws {
-      saml_provider_arn = aws_iam_saml_provider.engineering.arn
-      allowed_role_arns = [aws_iam_role.admin.arn]
-    }
-  }
-}
-
-# Engineering readonly SP. sensitivity = "low" mirrors the
-# read-only blast radius.
-resource "splitsecure_saml2_service_provider" "engineering_readonly" {
-  team_s2r         = var.engineering_team_s2r
-  idp_resource_s2r = splitsecure_saml2_identity_provider.engineering.id
-
-  name                = "engineering/aws-${local.account_id}-readonly"
-  description         = "Engineering read-only federation into AWS account ${local.account_id}."
-  notification_policy = "notify_everyone"
-  sensitivity         = "low"
-  entity_id           = "urn:amazon:webservices"
-  acs_url             = "https://signin.aws.amazon.com/saml"
-
-  justification = "Engineering federation to assume ${aws_iam_role.readonly.name} (AWS managed ReadOnlyAccess) in AWS account ${local.account_id}."
-
-  account {
-    kind = "aws"
-    aws {
-      saml_provider_arn = aws_iam_saml_provider.engineering.arn
-      allowed_role_arns = [aws_iam_role.readonly.arn]
-    }
-  }
-}
-
-# Technical Support readonly SP. Bound to the Support IdP but
-# allowed_role_arns points at the same shared readonly role.
-resource "splitsecure_saml2_service_provider" "support_readonly" {
-  team_s2r         = var.support_team_s2r
-  idp_resource_s2r = splitsecure_saml2_identity_provider.support.id
-
-  name                = "support/aws-${local.account_id}-readonly"
-  description         = "Technical Support read-only federation into AWS account ${local.account_id}."
-  notification_policy = "notify_everyone"
-  sensitivity         = "low"
-  entity_id           = "urn:amazon:webservices"
-  acs_url             = "https://signin.aws.amazon.com/saml"
-
-  justification = "Technical Support federation to assume ${aws_iam_role.readonly.name} (AWS managed ReadOnlyAccess) in AWS account ${local.account_id}."
-
-  account {
-    kind = "aws"
-    aws {
-      saml_provider_arn = aws_iam_saml_provider.support.arn
-      allowed_role_arns = [aws_iam_role.readonly.arn]
+      saml_provider_arn = aws_iam_saml_provider.main.arn
+      allowed_role_arns = [
+        aws_iam_role.admin.arn,
+        aws_iam_role.readonly.arn,
+      ]
     }
   }
 }
 
 output "aws_account_id" {
   value       = local.account_id
-  description = "AWS account this federation targets."
+  description = "AWS account ID this federation targets."
 }
 
-output "rollout_date" {
-  value       = local.rollout_date
-  description = "Date the federation was first provisioned."
+output "idp_s2r" {
+  value       = splitsecure_saml2_identity_provider.main.id
+  description = "Resource s2r URI of the SplitSecure IdP."
 }
 
-output "engineering_idp_s2r" {
-  value       = splitsecure_saml2_identity_provider.engineering.id
-  description = "Resource s2r URI for the Engineering IdP."
+output "sp_s2r" {
+  value       = splitsecure_saml2_service_provider.main.id
+  description = "Resource s2r URI of the SplitSecure SP."
 }
 
-output "support_idp_s2r" {
-  value       = splitsecure_saml2_identity_provider.support.id
-  description = "Resource s2r URI for the Technical Support IdP."
+output "idp_sso_url_redirect" {
+  value       = splitsecure_saml2_identity_provider.main.sso_url_redirect
+  description = "SSO URL (HTTP-Redirect binding) assigned by the backend."
 }
 
-output "engineering_admin_sp_s2r" {
-  value       = splitsecure_saml2_service_provider.engineering_admin.id
-  description = "Resource s2r URI for the Engineering admin SP (sensitivity = critical)."
+output "idp_sso_url_post" {
+  value       = splitsecure_saml2_identity_provider.main.sso_url_post
+  description = "SSO URL (HTTP-POST binding) assigned by the backend."
 }
 
-output "engineering_readonly_sp_s2r" {
-  value       = splitsecure_saml2_service_provider.engineering_readonly.id
-  description = "Resource s2r URI for the Engineering readonly SP (sensitivity = low)."
+output "idp_metadata_xml" {
+  value       = splitsecure_saml2_identity_provider.main.metadata_xml
+  description = "SAML IdP metadata XML rendered from the signing cert, provider_id, and SSO URLs."
 }
 
-output "support_readonly_sp_s2r" {
-  value       = splitsecure_saml2_service_provider.support_readonly.id
-  description = "Resource s2r URI for the Technical Support readonly SP (sensitivity = low)."
+output "aws_saml_provider_arn" {
+  value       = aws_iam_saml_provider.main.arn
+  description = "ARN of the AWS-side SAML provider mirror."
 }
 
-output "admin_role_arn" {
+output "aws_admin_role_arn" {
   value       = aws_iam_role.admin.arn
-  description = "ARN of the admin role (Engineering only)."
+  description = "ARN of the admin role users assume via SAML."
 }
 
-output "readonly_role_arn" {
+output "aws_readonly_role_arn" {
   value       = aws_iam_role.readonly.arn
-  description = "ARN of the read-only role (Engineering + Technical Support)."
+  description = "ARN of the readonly role users assume via SAML."
 }
 ```
