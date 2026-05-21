@@ -17,20 +17,19 @@ Generated reference docs live in [`docs/`](./docs); per-resource attribute table
 
 ## Installation (dev override)
 
+To test a local build against any plan (including `examples/full`) without
+publishing to the registry, use the one-off install target. It builds the
+provider and writes `~/.terraformrc` with a `dev_overrides` block pointing
+at the local binary; from then on every `terraform` invocation on this
+machine uses the local build for `splitsecure/splitsecure`:
+
 ```bash
-make build
+make install-dev      # build + write ~/.terraformrc
+make uninstall-dev    # remove ~/.terraformrc
 ```
 
-Then in `~/.terraformrc`:
-
-```hcl
-provider_installation {
-  dev_overrides {
-    "splitsecure/splitsecure" = "/path/to/terraform-provider-splitsecure"
-  }
-  direct {}
-}
-```
+`install-dev` refuses to clobber an existing `~/.terraformrc` it didn't
+write (detected via a marker comment); back it up first if you have one.
 
 ## Provider Configuration
 
