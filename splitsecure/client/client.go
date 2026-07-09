@@ -10,6 +10,7 @@ import (
 
 	conveniencestorev1connect "github.com/splitsecure/apis/gen/go/proto/splitsecure/conveniencestore/v1/conveniencestorev1connect"
 	enclaveroundtripv1connect "github.com/splitsecure/apis/gen/go/proto/splitsecure/enclaveroundtrip/v1/enclaveroundtripv1connect"
+	orgsvcv1connect "github.com/splitsecure/apis/gen/go/proto/splitsecure/orgsvc/v1/orgsvcv1connect"
 	proposalsv1connect "github.com/splitsecure/apis/gen/go/proto/splitsecure/proposals/v1/proposalsv1connect"
 )
 
@@ -23,6 +24,7 @@ type Client struct {
 	ConvenienceStoreService conveniencestorev1connect.ConvenienceStoreServiceClient
 	EnclaveRoundtripService enclaveroundtripv1connect.EnclaveRoundtripServiceClient
 	ProposalsService        proposalsv1connect.ProposalsServiceClient
+	OrgService              orgsvcv1connect.OrgServiceClient
 	OrgS2R                  string
 }
 
@@ -48,6 +50,7 @@ func New(endpoint, bearerToken, orgS2R, version string) *Client {
 		ConvenienceStoreService: conveniencestorev1connect.NewConvenienceStoreServiceClient(httpClient, endpoint),
 		EnclaveRoundtripService: enclaveroundtripv1connect.NewEnclaveRoundtripServiceClient(httpClient, endpoint),
 		ProposalsService:        proposalsv1connect.NewProposalsServiceClient(httpClient, endpoint),
+		OrgService:              orgsvcv1connect.NewOrgServiceClient(httpClient, endpoint),
 		OrgS2R:                  orgS2R,
 	}
 }

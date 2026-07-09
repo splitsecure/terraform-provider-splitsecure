@@ -203,4 +203,33 @@ output "aws_readonly_role_arn" {
   value       = aws_iam_role.readonly.arn
   description = "ARN of the readonly role users assume via SAML."
 }
+
+# --- Access -------------------------------------------------------
+# Terraform-managed permissions on the SP. Without grants, only org
+# owners/admins (and the creating service account) can see it.
+
+data "splitsecure_organization" "current" {}
+
+variable "operator_s2rs" {
+  type        = list(string)
+  default     = []
+  description = "User / service-account S2Rs allowed to operate the AWS federation SP."
+}
+
+resource "splitsecure_group" "operators" {
+  name    = "aws-federation-operators-${local.account_id}"
+  members = var.operator_s2rs
+}
+
+resource "splitsecure_grant" "operators_use" {
+  resource_s2r = splitsecure_saml2_service_provider.main.id
+  grantee_s2r  = splitsecure_group.operators.group_s2r
+  tier         = "use"
+}
+
+resource "splitsecure_grant" "org_view" {
+  resource_s2r = splitsecure_saml2_service_provider.main.id
+  grantee_s2r  = data.splitsecure_organization.current.everyone_group_s2r
+  tier         = "view"
+}
 ```
