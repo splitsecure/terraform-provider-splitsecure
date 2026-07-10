@@ -21,7 +21,6 @@ import (
 	authzv1 "github.com/splitsecure/apis/gen/go/proto/splitsecure/authz/v1"
 	orgsvcv1 "github.com/splitsecure/apis/gen/go/proto/splitsecure/orgsvc/v1"
 	"github.com/splitsecure/terraform-provider-splitsecure/splitsecure/client"
-	"github.com/splitsecure/terraform-provider-splitsecure/splitsecure/internal/wait"
 )
 
 var (
@@ -240,9 +239,13 @@ func (r *grantResource) putGrantRetryingAuthz(ctx context.Context, req *orgsvcv1
 			)
 		}
 
-		werr := wait.Sleep(ctx, waits[attempt])
-		if werr != nil {
-			return nil, werr
+		t := time.NewTimer(waits[attempt])
+		select {
+		case <-ctx.Done():
+			t.Stop()
+
+			return nil, ctx.Err()
+		case <-t.C:
 		}
 	}
 }

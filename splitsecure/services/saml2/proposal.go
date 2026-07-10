@@ -14,7 +14,6 @@ import (
 	enclaveroundtripv1 "github.com/splitsecure/apis/gen/go/proto/splitsecure/enclaveroundtrip/v1"
 	proposalsv1 "github.com/splitsecure/apis/gen/go/proto/splitsecure/proposals/v1"
 	"github.com/splitsecure/terraform-provider-splitsecure/splitsecure/client"
-	"github.com/splitsecure/terraform-provider-splitsecure/splitsecure/internal/wait"
 )
 
 // proposalTimeout is the default wall-clock limit for waiting on a
@@ -166,7 +165,7 @@ func awaitProposalID(ctx context.Context, c *client.Client, requestID []byte) ([
 			return pid, nil
 		}
 
-		err = wait.Sleep(ctx, pollInterval)
+		err = sleep(ctx, pollInterval)
 		if err != nil {
 			return nil, err
 		}
@@ -195,7 +194,7 @@ func awaitProposalTerminal(ctx context.Context, c *client.Client, proposalID []b
 			// Keep polling.
 		}
 
-		err = wait.Sleep(ctx, pollInterval)
+		err = sleep(ctx, pollInterval)
 		if err != nil {
 			return err
 		}
@@ -221,7 +220,7 @@ func awaitProposalResource(ctx context.Context, c *client.Client, proposalID []b
 			return s, nil
 		}
 
-		err = wait.Sleep(ctx, pollInterval)
+		err = sleep(ctx, pollInterval)
 		if err != nil {
 			return "", err
 		}
@@ -242,4 +241,16 @@ func fetchSAML2Record(ctx context.Context, c *client.Client, resourceS2R string)
 	}
 
 	return resp.Msg.GetResources()[resourceS2R], nil
+}
+
+// sleep is a context-aware sleep that returns early on cancel/timeout.
+func sleep(ctx context.Context, d time.Duration) error {
+	t := time.NewTimer(d)
+	defer t.Stop()
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-t.C:
+		return nil
+	}
 }
