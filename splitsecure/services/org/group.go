@@ -59,19 +59,7 @@ func (r *groupResource) Metadata(_ context.Context, req resource.MetadataRequest
 }
 
 func (r *groupResource) Configure(_ context.Context, req resource.ConfigureRequest, resp *resource.ConfigureResponse) {
-	if req.ProviderData == nil {
-		return
-	}
-	c, ok := req.ProviderData.(*client.Client)
-	if !ok {
-		resp.Diagnostics.AddError(
-			"Unexpected provider data type",
-			fmt.Sprintf("expected *client.Client, got %T", req.ProviderData),
-		)
-
-		return
-	}
-	r.client = c
+	r.client = clientFromProviderData(req.ProviderData, &resp.Diagnostics)
 }
 
 func (r *groupResource) Schema(_ context.Context, _ resource.SchemaRequest, resp *resource.SchemaResponse) {
@@ -261,10 +249,6 @@ func (r *groupResource) Update(ctx context.Context, req resource.UpdateRequest, 
 		return
 	}
 
-	plan.GroupS2R = types.StringValue(groupS2R)
-	if plan.Source.IsUnknown() {
-		plan.Source = state.Source
-	}
 	resp.Diagnostics.Append(resp.State.Set(ctx, &plan)...)
 }
 
@@ -401,7 +385,10 @@ func (r *groupResource) reconcileMembers(ctx context.Context, groupS2R string, s
 			GroupS2R:     groupS2R,
 			PrincipalS2R: principal,
 		}))
-		if err != nil {
+		// NotFound means the principal is already gone (deleted from the
+		// org, or removed out of band) — the desired end state is met, so
+		// treat it as a successful removal rather than failing the apply.
+		if err != nil && connect.CodeOf(err) != connect.CodeNotFound {
 			return current, "Removing group member",
 				fmt.Errorf("removing %s from group %s: %w", principal, groupS2R, err)
 		}

@@ -39,19 +39,7 @@ func (d *organizationDataSource) Metadata(_ context.Context, req datasource.Meta
 }
 
 func (d *organizationDataSource) Configure(_ context.Context, req datasource.ConfigureRequest, resp *datasource.ConfigureResponse) {
-	if req.ProviderData == nil {
-		return
-	}
-	c, ok := req.ProviderData.(*client.Client)
-	if !ok {
-		resp.Diagnostics.AddError(
-			"Unexpected provider data type",
-			fmt.Sprintf("expected *client.Client, got %T", req.ProviderData),
-		)
-
-		return
-	}
-	d.client = c
+	d.client = clientFromProviderData(req.ProviderData, &resp.Diagnostics)
 }
 
 func (d *organizationDataSource) Schema(_ context.Context, _ datasource.SchemaRequest, resp *datasource.SchemaResponse) {

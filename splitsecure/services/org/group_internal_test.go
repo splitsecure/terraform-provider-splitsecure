@@ -2,16 +2,79 @@ package org
 
 import (
 	"context"
+	"errors"
 	"slices"
 	"strings"
 	"testing"
 
+	"connectrpc.com/connect"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	rschema "github.com/hashicorp/terraform-plugin-framework/resource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 
 	orgsvcv1 "github.com/splitsecure/apis/gen/go/proto/splitsecure/orgsvc/v1"
+	"github.com/splitsecure/apis/gen/go/proto/splitsecure/orgsvc/v1/orgsvcv1connect"
+	"github.com/splitsecure/terraform-provider-splitsecure/splitsecure/client"
 )
+
+var errStub = errors.New("stub rpc error")
+
+// fakeOrgClient embeds the OrgService client so only the methods a test
+// exercises need overriding; any other call panics on the nil embed.
+type fakeOrgClient struct {
+	orgsvcv1connect.OrgServiceClient
+
+	removeErr error
+}
+
+func (f *fakeOrgClient) RemoveGroupMember(
+	_ context.Context, _ *connect.Request[orgsvcv1.RemoveGroupMemberRequest],
+) (*connect.Response[orgsvcv1.RemoveGroupMemberResponse], error) {
+	if f.removeErr != nil {
+		return nil, f.removeErr
+	}
+
+	return connect.NewResponse(&orgsvcv1.RemoveGroupMemberResponse{}), nil
+}
+
+func reconcileWithRemoveErr(t *testing.T, removeErr error) ([]string, string, error) {
+	t.Helper()
+
+	r := &groupResource{client: &client.Client{
+		OrgService: &fakeOrgClient{removeErr: removeErr},
+		OrgS2R:     "s2r:test:org:x",
+	}}
+
+	// State lists one principal, plan lists none -> the member is removed.
+	return r.reconcileMembers(context.Background(), "s2r:test:group:x/y", []string{"s2r:test:usr:a"}, nil)
+}
+
+func TestReconcileMembers_RemoveToleratesNotFound(t *testing.T) {
+	t.Parallel()
+
+	current, title, err := reconcileWithRemoveErr(t, connect.NewError(connect.CodeNotFound, errStub))
+	if err != nil {
+		t.Fatalf("NotFound removal should be tolerated, got error %v (%s)", err, title)
+	}
+	if len(current) != 0 {
+		t.Fatalf("principal should be dropped from current, got %v", current)
+	}
+}
+
+func TestReconcileMembers_RemoveOtherErrorFails(t *testing.T) {
+	t.Parallel()
+
+	current, title, err := reconcileWithRemoveErr(t, connect.NewError(connect.CodeInternal, errStub))
+	if err == nil {
+		t.Fatal("non-NotFound removal error should fail the reconcile")
+	}
+	if title != "Removing group member" {
+		t.Fatalf("unexpected error title %q", title)
+	}
+	if !slices.Equal(current, []string{"s2r:test:usr:a"}) {
+		t.Fatalf("failed removal should leave the principal in current, got %v", current)
+	}
+}
 
 func groupResourceSchema(t *testing.T) rschema.Schema {
 	t.Helper()

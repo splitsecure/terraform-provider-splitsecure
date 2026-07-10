@@ -21,6 +21,7 @@ import (
 	authzv1 "github.com/splitsecure/apis/gen/go/proto/splitsecure/authz/v1"
 	orgsvcv1 "github.com/splitsecure/apis/gen/go/proto/splitsecure/orgsvc/v1"
 	"github.com/splitsecure/terraform-provider-splitsecure/splitsecure/client"
+	"github.com/splitsecure/terraform-provider-splitsecure/splitsecure/internal/wait"
 )
 
 var (
@@ -49,19 +50,7 @@ func (r *grantResource) Metadata(_ context.Context, req resource.MetadataRequest
 }
 
 func (r *grantResource) Configure(_ context.Context, req resource.ConfigureRequest, resp *resource.ConfigureResponse) {
-	if req.ProviderData == nil {
-		return
-	}
-	c, ok := req.ProviderData.(*client.Client)
-	if !ok {
-		resp.Diagnostics.AddError(
-			"Unexpected provider data type",
-			fmt.Sprintf("expected *client.Client, got %T", req.ProviderData),
-		)
-
-		return
-	}
-	r.client = c
+	r.client = clientFromProviderData(req.ProviderData, &resp.Diagnostics)
 }
 
 func (r *grantResource) Schema(_ context.Context, _ resource.SchemaRequest, resp *resource.SchemaResponse) {
@@ -103,26 +92,7 @@ func (r *grantResource) Create(ctx context.Context, req resource.CreateRequest, 
 		return
 	}
 
-	tier, err := tierFromString(plan.Tier.ValueString())
-	if err != nil {
-		resp.Diagnostics.AddError("Invalid tier", err.Error())
-
-		return
-	}
-
-	g, err := r.putGrantRetryingAuthz(ctx, &orgsvcv1.PutGrantRequest{
-		OrgS2R:      r.client.OrgS2R,
-		ResourceS2R: plan.ResourceS2R.ValueString(),
-		GranteeS2R:  plan.GranteeS2R.ValueString(),
-		Tier:        tier,
-	})
-	if err != nil {
-		resp.Diagnostics.AddError("Creating grant", err.Error())
-
-		return
-	}
-
-	resp.Diagnostics.Append(populateGrantModel(&plan, g)...)
+	resp.Diagnostics.Append(r.upsertGrant(ctx, plan, true)...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
@@ -166,26 +136,7 @@ func (r *grantResource) Update(ctx context.Context, req resource.UpdateRequest, 
 		return
 	}
 
-	tier, err := tierFromString(plan.Tier.ValueString())
-	if err != nil {
-		resp.Diagnostics.AddError("Invalid tier", err.Error())
-
-		return
-	}
-
-	putResp, err := r.client.OrgService.PutGrant(ctx, connect.NewRequest(&orgsvcv1.PutGrantRequest{
-		OrgS2R:      r.client.OrgS2R,
-		ResourceS2R: plan.ResourceS2R.ValueString(),
-		GranteeS2R:  plan.GranteeS2R.ValueString(),
-		Tier:        tier,
-	}))
-	if err != nil {
-		resp.Diagnostics.AddError("Updating grant", err.Error())
-
-		return
-	}
-
-	resp.Diagnostics.Append(populateGrantModel(&plan, putResp.Msg.GetGrant())...)
+	resp.Diagnostics.Append(r.upsertGrant(ctx, plan, false)...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
@@ -220,6 +171,47 @@ func (r *grantResource) ImportState(ctx context.Context, req resource.ImportStat
 	resp.Diagnostics.Append(resp.State.SetAttribute(ctx, path.Root("grantee_s2r"), granteeS2R)...)
 }
 
+// upsertGrant writes the grant via PutGrant (an upsert). retryAuthz
+// retries PermissionDenied for ~30s on the create path to absorb the
+// creator-grant write race. State is set by the caller from the plan:
+// resource_s2r, grantee_s2r, and tier are all config-owned, so the
+// server echo is intentionally not read back — writing a server-
+// canonicalized value into a RequiresReplace attribute would trip the
+// framework's post-apply consistency check.
+func (r *grantResource) upsertGrant(ctx context.Context, plan grantModel, retryAuthz bool) diag.Diagnostics {
+	var d diag.Diagnostics
+
+	tier, err := tierFromString(plan.Tier.ValueString())
+	if err != nil {
+		d.AddError("Invalid tier", err.Error())
+
+		return d
+	}
+
+	req := &orgsvcv1.PutGrantRequest{
+		OrgS2R:      r.client.OrgS2R,
+		ResourceS2R: plan.ResourceS2R.ValueString(),
+		GranteeS2R:  plan.GranteeS2R.ValueString(),
+		Tier:        tier,
+	}
+
+	if retryAuthz {
+		_, err = r.putGrantRetryingAuthz(ctx, req)
+		if err != nil {
+			d.AddError("Creating grant", err.Error())
+		}
+
+		return d
+	}
+
+	_, err = r.client.OrgService.PutGrant(ctx, connect.NewRequest(req))
+	if err != nil {
+		d.AddError("Updating grant", err.Error())
+	}
+
+	return d
+}
+
 // putGrantRetryingAuthz is the Create-path PutGrant. It retries
 // PermissionDenied for ~30s: a grant against a freshly
 // proposal-created resource can race the server-side creator-grant
@@ -248,13 +240,9 @@ func (r *grantResource) putGrantRetryingAuthz(ctx context.Context, req *orgsvcv1
 			)
 		}
 
-		t := time.NewTimer(waits[attempt])
-		select {
-		case <-ctx.Done():
-			t.Stop()
-
-			return nil, ctx.Err()
-		case <-t.C:
+		werr := wait.Sleep(ctx, waits[attempt])
+		if werr != nil {
+			return nil, werr
 		}
 	}
 }
