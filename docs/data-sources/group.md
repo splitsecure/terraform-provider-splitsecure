@@ -3,22 +3,23 @@
 page_title: "splitsecure_group Data Source - SplitSecure"
 subcategory: ""
 description: |-
-  Looks up a single org group by exact name. Errors if no group or more than one group matches (org group names are not unique server-side). The system Everyone group is not listed; read everyone_group_s2r from the splitsecure_organization data source instead.
+  Resolves an org group by its stable group_s2r, exposing its current name and source. Lookup is by group_s2r only: a group's name is mutable and not unique server-side, so it is not a stable key. The system Everyone group is not a regular group; read everyone_group_s2r from the splitsecure_organization data source instead.
 ---
 
 # splitsecure_group (Data Source)
 
-Looks up a single org group by exact name. Errors if no group or more than one group matches (org group names are not unique server-side). The system Everyone group is not listed; read everyone_group_s2r from the splitsecure_organization data source instead.
+Resolves an org group by its stable group_s2r, exposing its current name and source. Lookup is by group_s2r only: a group's name is mutable and not unique server-side, so it is not a stable key. The system Everyone group is not a regular group; read everyone_group_s2r from the splitsecure_organization data source instead.
 
 ## Example Usage
 
 ```terraform
-# Look up an existing group (e.g. SCIM-synced) by name. Names are not
-# unique server-side; the lookup errors on zero or multiple matches.
-# The system "Everyone" group is not listed — use the
-# splitsecure_organization data source for it.
+# Resolve a group by its stable group_s2r, exposing its current name and
+# source (e.g. to assert its source before granting on it). A group's
+# name is mutable and not unique server-side, so group_s2r is the only
+# lookup key. To use a group as a grant grantee you can also reference
+# its s2r directly, without this data source.
 data "splitsecure_group" "sre" {
-  name = "SRE"
+  group_s2r = "s2r:us:group:01HX.../01HY..."
 }
 ```
 
@@ -27,9 +28,9 @@ data "splitsecure_group" "sre" {
 
 ### Required
 
-- `name` (String) Group name to look up. Matched exactly (case-sensitive).
+- `group_s2r` (String) Group s2r URI to resolve. Also usable directly as a grant grantee.
 
 ### Read-Only
 
-- `group_s2r` (String) Group s2r URI. Usable as a grant grantee.
+- `name` (String) Current group name. Mutable server-side, so do not treat it as an identifier.
 - `source` (String) Where the group is managed: "local", "scim", or "system".

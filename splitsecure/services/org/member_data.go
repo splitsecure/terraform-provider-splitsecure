@@ -22,6 +22,7 @@ var _ datasource.DataSource = (*memberDataSource)(nil)
 var (
 	errNoOrgMember          = errors.New("no org member")
 	errAmbiguousMemberEmail = errors.New("ambiguous member email")
+	errEmptyMemberUserID    = errors.New("member resolved to an empty user_s2r")
 )
 
 type memberDataSource struct {
@@ -90,6 +91,11 @@ func (d *memberDataSource) Read(ctx context.Context, req datasource.ReadRequest,
 	member, err := matchMemberByEmail(listResp.Msg.GetMembers(), config.Email.ValueString())
 	if err != nil {
 		resp.Diagnostics.AddError("Looking up org member", err.Error())
+
+		return
+	}
+	if member.GetUserId() == "" {
+		resp.Diagnostics.AddError("Looking up org member", fmt.Sprintf("%s: %s", errEmptyMemberUserID, config.Email.ValueString()))
 
 		return
 	}

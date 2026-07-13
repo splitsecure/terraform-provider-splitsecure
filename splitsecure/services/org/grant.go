@@ -195,7 +195,7 @@ func (r *grantResource) upsertGrant(ctx context.Context, plan grantModel, retryA
 	}
 
 	if retryAuthz {
-		_, err = r.putGrantRetryingAuthz(ctx, req)
+		err = r.putGrantRetryingAuthz(ctx, req)
 		if err != nil {
 			d.AddError("Creating grant", err.Error())
 		}
@@ -216,7 +216,7 @@ func (r *grantResource) upsertGrant(ctx context.Context, plan grantModel, retryA
 // proposal-created resource can race the server-side creator-grant
 // write that authorizes this caller. Every other code fails
 // immediately.
-func (r *grantResource) putGrantRetryingAuthz(ctx context.Context, req *orgsvcv1.PutGrantRequest) (*orgsvcv1.Grant, error) {
+func (r *grantResource) putGrantRetryingAuthz(ctx context.Context, req *orgsvcv1.PutGrantRequest) error {
 	waits := []time.Duration{
 		1 * time.Second,
 		2 * time.Second,
@@ -225,15 +225,15 @@ func (r *grantResource) putGrantRetryingAuthz(ctx context.Context, req *orgsvcv1
 		8 * time.Second,
 	}
 	for attempt := 0; ; attempt++ {
-		putResp, err := r.client.OrgService.PutGrant(ctx, connect.NewRequest(req))
+		_, err := r.client.OrgService.PutGrant(ctx, connect.NewRequest(req))
 		if err == nil {
-			return putResp.Msg.GetGrant(), nil
+			return nil
 		}
 		if connect.CodeOf(err) != connect.CodePermissionDenied {
-			return nil, fmt.Errorf("PutGrant: %w", err)
+			return fmt.Errorf("PutGrant: %w", err)
 		}
 		if attempt >= len(waits) {
-			return nil, fmt.Errorf(
+			return fmt.Errorf(
 				"PutGrant still permission-denied after %d attempts: creating a grant on %s requires the calling principal to hold the %q tier on that resource (an org admin can grant it): %w",
 				attempt+1, req.GetResourceS2R(), "edit", err,
 			)
@@ -244,7 +244,7 @@ func (r *grantResource) putGrantRetryingAuthz(ctx context.Context, req *orgsvcv1
 		case <-ctx.Done():
 			t.Stop()
 
-			return nil, ctx.Err()
+			return ctx.Err()
 		case <-t.C:
 		}
 	}
@@ -264,8 +264,10 @@ func populateGrantModel(m *grantModel, g *orgsvcv1.Grant) diag.Diagnostics {
 		return d
 	}
 
-	m.ResourceS2R = types.StringValue(g.GetResourceS2R())
-	m.GranteeS2R = types.StringValue(g.GetGranteeS2R())
+	// Refresh only tier. resource_s2r and grantee_s2r are config-owned
+	// RequiresReplace keys preserved from prior state; echoing the server's
+	// (possibly canonicalized) value back would trip the framework's post-
+	// apply consistency check -- same rationale as upsertGrant.
 	m.Tier = types.StringValue(tierStr)
 
 	return nil

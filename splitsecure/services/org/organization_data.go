@@ -16,7 +16,10 @@ import (
 
 var _ datasource.DataSource = (*organizationDataSource)(nil)
 
-var errEmptyOrganization = errors.New("GetOrganization returned an empty organization")
+var (
+	errEmptyOrganization  = errors.New("GetOrganization returned an empty organization")
+	errEmptyEveryoneGroup = errors.New("GetOrganization returned an empty everyone_group_s2r")
+)
 
 type organizationDataSource struct {
 	client *client.Client
@@ -77,6 +80,11 @@ func (d *organizationDataSource) Read(ctx context.Context, _ datasource.ReadRequ
 	o := getResp.Msg.GetOrganization()
 	if o == nil {
 		resp.Diagnostics.AddError("Reading organization", fmt.Errorf("%w for %s", errEmptyOrganization, d.client.OrgS2R).Error())
+
+		return
+	}
+	if o.GetEveryoneGroupS2R() == "" {
+		resp.Diagnostics.AddError("Reading organization", fmt.Errorf("%w for %s", errEmptyEveryoneGroup, d.client.OrgS2R).Error())
 
 		return
 	}

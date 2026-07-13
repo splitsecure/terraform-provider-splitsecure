@@ -34,8 +34,9 @@ const (
 )
 
 var (
-	errEmptyGroup      = errors.New("CreateGroup returned no group_s2r; the group may exist server-side but cannot be tracked in state")
-	errMembersNotAdded = errors.New("some members could not be added")
+	errEmptyGroup           = errors.New("CreateGroup returned no group_s2r; the group may exist server-side but cannot be tracked in state")
+	errMembersNotAdded      = errors.New("some members could not be added")
+	errEmptyMemberPrincipal = errors.New("ListGroupMembers returned a member with an empty principal_s2r")
 )
 
 type groupResource struct {
@@ -347,7 +348,11 @@ func (r *groupResource) listMemberPrincipals(ctx context.Context, groupS2R strin
 	}
 	principals := make([]string, 0, len(membersResp.Msg.GetMembers()))
 	for _, m := range membersResp.Msg.GetMembers() {
-		principals = append(principals, m.GetPrincipalS2R())
+		p := m.GetPrincipalS2R()
+		if p == "" {
+			return nil, fmt.Errorf("%w for group %s", errEmptyMemberPrincipal, groupS2R)
+		}
+		principals = append(principals, p)
 	}
 
 	return principals, nil

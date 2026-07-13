@@ -4,12 +4,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"strings"
 
 	"connectrpc.com/connect"
 	"github.com/hashicorp/terraform-plugin-framework-validators/stringvalidator"
 	"github.com/hashicorp/terraform-plugin-framework/datasource"
 	"github.com/hashicorp/terraform-plugin-framework/datasource/schema"
+	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/schema/validator"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 
@@ -21,8 +21,8 @@ var _ datasource.DataSource = (*groupDataSource)(nil)
 
 var (
 	errGroupNotFound      = errors.New("group not found")
-	errAmbiguousGroupName = errors.New("ambiguous group name")
 	errUnknownGroupSource = errors.New("unknown group source")
+	errEmptyGroupResp     = errors.New("server returned an empty group")
 )
 
 type groupDataSource struct {
@@ -30,8 +30,8 @@ type groupDataSource struct {
 }
 
 type groupDataSourceModel struct {
-	Name     types.String `tfsdk:"name"`
 	GroupS2R types.String `tfsdk:"group_s2r"`
+	Name     types.String `tfsdk:"name"`
 	Source   types.String `tfsdk:"source"`
 }
 
@@ -51,20 +51,21 @@ func (d *groupDataSource) Configure(_ context.Context, req datasource.ConfigureR
 
 func (d *groupDataSource) Schema(_ context.Context, _ datasource.SchemaRequest, resp *datasource.SchemaResponse) {
 	resp.Schema = schema.Schema{
-		Description: "Looks up a single org group by exact name. Errors if no group or more than one group matches " +
-			"(org group names are not unique server-side). The system Everyone group is not listed; " +
-			"read everyone_group_s2r from the splitsecure_organization data source instead.",
+		Description: "Resolves an org group by its stable group_s2r, exposing its current name and source. " +
+			"Lookup is by group_s2r only: a group's name is mutable and not unique server-side, so it is not a " +
+			"stable key. The system Everyone group is not a regular group; read everyone_group_s2r from the " +
+			"splitsecure_organization data source instead.",
 		Attributes: map[string]schema.Attribute{
-			"name": schema.StringAttribute{
+			"group_s2r": schema.StringAttribute{
 				Required:    true,
-				Description: "Group name to look up. Matched exactly (case-sensitive).",
+				Description: "Group s2r URI to resolve. Also usable directly as a grant grantee.",
 				Validators: []validator.String{
 					stringvalidator.LengthAtLeast(1),
 				},
 			},
-			"group_s2r": schema.StringAttribute{
+			"name": schema.StringAttribute{
 				Computed:    true,
-				Description: "Group s2r URI. Usable as a grant grantee.",
+				Description: "Current group name. Mutable server-side, so do not treat it as an identifier.",
 			},
 			"source": schema.StringAttribute{
 				Computed:    true,
@@ -81,19 +82,8 @@ func (d *groupDataSource) Read(ctx context.Context, req datasource.ReadRequest, 
 		return
 	}
 
-	listResp, err := d.client.OrgService.ListGroups(ctx, connect.NewRequest(&orgsvcv1.ListGroupsRequest{
-		OrgS2R: d.client.OrgS2R,
-	}))
-	if err != nil {
-		resp.Diagnostics.AddError("ListGroups", err.Error())
-
-		return
-	}
-
-	group, err := matchGroupByName(listResp.Msg.GetGroups(), config.Name.ValueString())
-	if err != nil {
-		resp.Diagnostics.AddError("Looking up group", err.Error())
-
+	group := d.getByS2R(ctx, config.GroupS2R.ValueString(), &resp.Diagnostics)
+	if resp.Diagnostics.HasError() {
 		return
 	}
 
@@ -104,38 +94,34 @@ func (d *groupDataSource) Read(ctx context.Context, req datasource.ReadRequest, 
 		return
 	}
 
-	config.GroupS2R = types.StringValue(group.GetGroupS2R())
+	config.Name = types.StringValue(group.GetName())
 	config.Source = types.StringValue(source)
 	resp.Diagnostics.Append(resp.State.Set(ctx, &config)...)
 }
 
-// matchGroupByName returns the single group whose name equals the given
-// name exactly (case-sensitive). Zero or multiple matches are errors.
-func matchGroupByName(groups []*orgsvcv1.Group, name string) (*orgsvcv1.Group, error) {
-	var matches []*orgsvcv1.Group
-	for _, g := range groups {
-		if g.GetName() == name {
-			matches = append(matches, g)
+// getByS2R resolves a group directly by its stable s2r.
+func (d *groupDataSource) getByS2R(ctx context.Context, groupS2R string, diags *diag.Diagnostics) *orgsvcv1.Group {
+	getResp, err := d.client.OrgService.GetGroup(ctx, connect.NewRequest(&orgsvcv1.GetGroupRequest{
+		GroupS2R: groupS2R,
+	}))
+	if err != nil {
+		if connect.CodeOf(err) == connect.CodeNotFound {
+			diags.AddError("Looking up group", fmt.Sprintf("%s: %s", errGroupNotFound, groupS2R))
+
+			return nil
 		}
+		diags.AddError("GetGroup", err.Error())
+
+		return nil
+	}
+	g := getResp.Msg.GetGroup()
+	if g.GetGroupS2R() == "" {
+		diags.AddError("Looking up group", fmt.Sprintf("%s for %s", errEmptyGroupResp, groupS2R))
+
+		return nil
 	}
 
-	switch len(matches) {
-	case 0:
-		return nil, fmt.Errorf(
-			"%w: no group named %q; note the system Everyone group is not returned by group listings -- "+
-				"read everyone_group_s2r from the splitsecure_organization data source instead",
-			errGroupNotFound, name)
-	case 1:
-		return matches[0], nil
-	default:
-		s2rs := make([]string, len(matches))
-		for i, g := range matches {
-			s2rs[i] = g.GetGroupS2R()
-		}
-
-		return nil, fmt.Errorf("%w: %q matches %d groups (org group names are not unique): %s",
-			errAmbiguousGroupName, name, len(matches), strings.Join(s2rs, ", "))
-	}
+	return g
 }
 
 func groupSourceToString(s orgsvcv1.GroupSource) (string, error) {
