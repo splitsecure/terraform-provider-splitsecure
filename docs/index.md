@@ -210,15 +210,22 @@ output "aws_readonly_role_arn" {
 
 data "splitsecure_organization" "current" {}
 
-variable "operator_s2rs" {
+variable "operator_emails" {
   type        = list(string)
   default     = []
-  description = "User / service-account S2Rs allowed to operate the AWS federation SP."
+  description = "Emails (as shown in the console) of users / service accounts allowed to operate the AWS federation SP."
+}
+
+# Resolve each console email to its principal s2r (users and service
+# accounts alike), so callers paste emails rather than raw s2rs.
+data "splitsecure_principal" "operators" {
+  for_each = toset(var.operator_emails)
+  email    = each.value
 }
 
 resource "splitsecure_group" "operators" {
   name    = "aws-federation-operators-${local.account_id}"
-  members = var.operator_s2rs
+  members = [for p in data.splitsecure_principal.operators : p.s2r]
 }
 
 resource "splitsecure_grant" "operators_use" {

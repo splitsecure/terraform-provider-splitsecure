@@ -9,7 +9,7 @@ Terraform provider for managing SplitSecure SAML2 resources via service-account 
 - **`splitsecure_grant`** — per-resource permission grant `(resource, grantee) → view/use/edit` so the resources above are visible/usable to org members, not just their creator. Plain RPCs, not proposal-gated. Tiers control visibility and permission management; resource mutations stay proposal/voter-gated regardless of tier.
 - **`splitsecure_group`** — locally-managed principal group with an authoritative member list, used as a grant target. Group mutations require the provider's service account to hold the org **admin** role; grants alone work with the default member role (the creating service account receives `edit` on resources it creates).
 
-Data sources: **`splitsecure_organization`** (org info incl. the "Everyone" group S2R for org-wide grants), **`splitsecure_org_member`** (user S2R by email), **`splitsecure_group`** (existing group by name, e.g. SCIM-synced).
+Data sources: **`splitsecure_organization`** (org info incl. the "Everyone" group S2R for org-wide grants), **`splitsecure_principal`** (principal S2R by console email — resolves both users and service accounts), **`splitsecure_org_member`** (user S2R by email), **`splitsecure_group`** (existing group by its `group_s2r`).
 
 Generated reference docs live in [`docs/`](./docs); per-resource attribute tables, validators, and example blocks are kept in sync via `tfplugindocs` (`make docs`).
 

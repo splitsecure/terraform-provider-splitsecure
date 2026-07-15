@@ -119,6 +119,7 @@ func (p *splitsecureProvider) DataSources(_ context.Context) []func() datasource
 	return []func() datasource.DataSource{
 		org.NewOrganizationDataSource,
 		org.NewMemberDataSource,
+		org.NewPrincipalDataSource,
 		org.NewGroupDataSource,
 	}
 }
