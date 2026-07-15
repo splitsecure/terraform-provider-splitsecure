@@ -95,6 +95,7 @@ func (d *principalDataSource) Read(ctx context.Context, req datasource.ReadReque
 	// it resolves without a directory lookup; anything else is a user email.
 	if _, domain, ok := strings.Cut(email, "@"); ok && strings.Contains(domain, serviceAccountEmailMarker) {
 		d.resolveServiceAccount(ctx, &config, resp)
+
 		return
 	}
 	d.resolveUser(ctx, &config, resp)
@@ -106,12 +107,14 @@ func (d *principalDataSource) resolveUser(ctx context.Context, config *principal
 	}))
 	if err != nil {
 		resp.Diagnostics.AddError("ListMembers", err.Error())
+
 		return
 	}
 
 	member, err := matchMemberByEmail(listResp.Msg.GetMembers(), config.Email.ValueString())
 	if err != nil {
 		resp.Diagnostics.AddError("Looking up principal", err.Error())
+
 		return
 	}
 
@@ -125,6 +128,7 @@ func (d *principalDataSource) resolveServiceAccount(ctx context.Context, config 
 	deployment, err := deploymentFromS2R(d.client.OrgS2R)
 	if err != nil {
 		resp.Diagnostics.AddError("Looking up principal", err.Error())
+
 		return
 	}
 	email := config.Email.ValueString()
@@ -141,16 +145,19 @@ func (d *principalDataSource) resolveServiceAccount(ctx context.Context, config 
 	}))
 	if err != nil {
 		resp.Diagnostics.AddError("GetServiceAccounts", err.Error())
+
 		return
 	}
 	sas := getResp.Msg.GetServiceAccounts()
 	if len(sas) == 0 {
 		resp.Diagnostics.AddError("Looking up principal", fmt.Sprintf("%s with email %q", errNoPrincipal, email))
+
 		return
 	}
 	sa := sas[0]
 	if !strings.EqualFold(sa.GetEmail(), email) {
 		resp.Diagnostics.AddError("Looking up principal", fmt.Sprintf("%s: %q -> %q (%s)", errSAEmailMismatch, email, sa.GetEmail(), sa.GetId()))
+
 		return
 	}
 
@@ -167,5 +174,6 @@ func deploymentFromS2R(s2r string) (string, error) {
 	if len(parts) < 4 || parts[0] != "s2r" || parts[1] == "" {
 		return "", fmt.Errorf("%w: %q", errBadOrgS2R, s2r)
 	}
+
 	return parts[1], nil
 }
