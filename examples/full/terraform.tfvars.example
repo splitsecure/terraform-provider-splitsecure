@@ -1,4 +1,10 @@
-# Copy to terraform.tfvars (gitignored) and fill in the s2r URIs.
+# Copy to terraform.tfvars (gitignored) and fill in the values.
 
 org_s2r  = "s2r:us:org:..."
 team_s2r = "s2r:us:team:..."
+
+# Console emails of the users / service accounts that may operate the SP.
+operator_emails = [
+  "alice@example.com",
+  "ci-bot@abc123.serviceaccount.us.splitsecure.com",
+]

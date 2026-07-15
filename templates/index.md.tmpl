@@ -19,6 +19,8 @@ description: |-
 
 ## Full Example
 
-End-to-end wiring: a SplitSecure team with a SAML2 IdP, mirrored as `aws_iam_saml_provider` on the AWS side, with admin and readonly IAM roles and a single SP allowing federation into both. Lives at [`examples/full/main.tf`](https://github.com/splitsecure/terraform-provider-splitsecure/tree/main/examples/full) in the repo.
+End-to-end wiring: a SplitSecure team with a SAML2 IdP, mirrored as `aws_iam_saml_provider` on the AWS side, with admin and readonly IAM roles and a single SP allowing federation into both. Lives at [`examples/full`](https://github.com/splitsecure/terraform-provider-splitsecure/tree/main/examples/full) in the repo.
+
+{{tffile "examples/full/variables.tf"}}
 
 {{tffile "examples/full/main.tf"}}

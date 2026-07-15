@@ -16,16 +16,6 @@ provider "splitsecure" {
 
 provider "aws" {}
 
-variable "org_s2r" {
-  type        = string
-  description = "Org s2r URI hosting the team below. Used by the provider to spawn the proposal-scoped managed enclave on every Create / Delete."
-}
-
-variable "team_s2r" {
-  type        = string
-  description = "Team s2r URI that owns the IdP and SP. Voters on this team approve every Create / Delete proposal."
-}
-
 data "aws_caller_identity" "current" {}
 
 locals {
@@ -165,12 +155,6 @@ output "aws_readonly_role_arn" {
 # owners/admins (and the creating service account) can see it.
 
 data "splitsecure_organization" "current" {}
-
-variable "operator_emails" {
-  type        = list(string)
-  default     = []
-  description = "Emails (as shown in the console) of users / service accounts allowed to operate the AWS federation SP."
-}
 
 # Resolve each console email to its principal s2r (users and service
 # accounts alike), so callers paste emails rather than raw s2rs.
