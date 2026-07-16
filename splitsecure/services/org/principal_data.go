@@ -20,16 +20,10 @@ import (
 var _ datasource.DataSource = (*principalDataSource)(nil)
 
 var (
-	errNoPrincipal     = errors.New("no principal")
-	errBadOrgS2R       = errors.New("provider org_s2r is not a valid s2r")
-	errSAEmailMismatch = errors.New("resolved service account email does not match")
+	errNoPrincipal        = errors.New("no principal")
+	errAmbiguousPrincipal = errors.New("email resolves to multiple principals")
+	errBadPrincipalS2R    = errors.New("resolved principal s2r is malformed")
 )
-
-// serviceAccountEmailMarker distinguishes a service-account email
-// (<sa-id>@<org-id>.serviceaccount.<deployment>.splitsecure.com) from a
-// human user email. The local part is the SA's sa: s2r id, so an SA email
-// resolves to its s2r by parsing — no directory lookup.
-const serviceAccountEmailMarker = ".serviceaccount."
 
 type principalDataSource struct {
 	client *client.Client
@@ -59,7 +53,6 @@ func (d *principalDataSource) Configure(_ context.Context, req datasource.Config
 func (d *principalDataSource) Schema(_ context.Context, _ datasource.SchemaRequest, resp *datasource.SchemaResponse) {
 	resp.Schema = schema.Schema{
 		Description: "Resolves an org principal (user or service account) to its s2r by the email shown in the console. " +
-			"User emails resolve via the member directory; service-account emails parse directly to their sa: s2r. " +
 			"Use the s2r as a group member or grant grantee.",
 		Attributes: map[string]schema.Attribute{
 			"email": schema.StringAttribute{
@@ -91,27 +84,34 @@ func (d *principalDataSource) Read(ctx context.Context, req datasource.ReadReque
 	}
 	email := config.Email.ValueString()
 
-	// A service-account email carries the sa: s2r id in its local part, so
-	// it resolves without a directory lookup; anything else is a user email.
-	if _, domain, ok := strings.Cut(email, "@"); ok && strings.Contains(domain, serviceAccountEmailMarker) {
-		d.resolveServiceAccount(ctx, &config, resp)
-
-		return
-	}
-	d.resolveUser(ctx, &config, resp)
-}
-
-func (d *principalDataSource) resolveUser(ctx context.Context, config *principalDataSourceModel, resp *datasource.ReadResponse) {
-	listResp, err := d.client.OrgService.ListMembers(ctx, connect.NewRequest(&orgsvcv1.ListMembersRequest{
-		Base: &orgsvcv1.ListMembersRequest_Base{OrganizationId: d.client.OrgS2R},
+	// GetMembersByEmail resolves users and service accounts alike, server-side —
+	// no member roster scan and no client-side service-account parsing.
+	membersResp, err := d.client.OrgService.GetMembersByEmail(ctx, connect.NewRequest(&orgsvcv1.GetMembersByEmailRequest{
+		Base: &orgsvcv1.GetMembersByEmailRequest_Base{
+			OrganizationId: d.client.OrgS2R,
+			Emails:         []string{email},
+		},
 	}))
 	if err != nil {
-		resp.Diagnostics.AddError("ListMembers", err.Error())
+		resp.Diagnostics.AddError("GetMembersByEmail", err.Error())
 
 		return
 	}
 
-	member, err := matchMemberByEmail(listResp.Msg.GetMembers(), config.Email.ValueString())
+	members := membersResp.Msg.GetMembers()
+	switch {
+	case len(members) == 0:
+		resp.Diagnostics.AddError("Looking up principal", fmt.Sprintf("%s with email %q", errNoPrincipal, email))
+
+		return
+	case len(members) > 1:
+		resp.Diagnostics.AddError("Looking up principal", fmt.Sprintf("%s: %q -> %d principals", errAmbiguousPrincipal, email, len(members)))
+
+		return
+	}
+
+	member := members[0]
+	kind, err := principalKindFromS2R(member.GetUserId())
 	if err != nil {
 		resp.Diagnostics.AddError("Looking up principal", err.Error())
 
@@ -119,61 +119,24 @@ func (d *principalDataSource) resolveUser(ctx context.Context, config *principal
 	}
 
 	config.S2R = types.StringValue(member.GetUserId())
-	config.Kind = types.StringValue("user")
+	config.Kind = types.StringValue(kind)
 	config.DisplayName = types.StringValue(member.GetDisplayName())
 	resp.Diagnostics.Append(resp.State.Set(ctx, config)...)
 }
 
-func (d *principalDataSource) resolveServiceAccount(ctx context.Context, config *principalDataSourceModel, resp *datasource.ReadResponse) {
-	deployment, err := deploymentFromS2R(d.client.OrgS2R)
-	if err != nil {
-		resp.Diagnostics.AddError("Looking up principal", err.Error())
-
-		return
-	}
-	email := config.Email.ValueString()
-	localPart, _, _ := strings.Cut(email, "@")
-	saS2R := fmt.Sprintf("s2r:%s:sa:%s", deployment, localPart)
-
-	// Confirm the parsed s2r is a real SA in this org and its email matches
-	// what was pasted — guards against a typo pointing at another SA.
-	getResp, err := d.client.OrgService.GetServiceAccounts(ctx, connect.NewRequest(&orgsvcv1.GetServiceAccountsRequest{
-		Base: &orgsvcv1.GetServiceAccountsRequest_Base{
-			OrganizationId:    d.client.OrgS2R,
-			ServiceAccountIds: []string{saS2R},
-		},
-	}))
-	if err != nil {
-		resp.Diagnostics.AddError("GetServiceAccounts", err.Error())
-
-		return
-	}
-	sas := getResp.Msg.GetServiceAccounts()
-	if len(sas) == 0 {
-		resp.Diagnostics.AddError("Looking up principal", fmt.Sprintf("%s with email %q", errNoPrincipal, email))
-
-		return
-	}
-	sa := sas[0]
-	if !strings.EqualFold(sa.GetEmail(), email) {
-		resp.Diagnostics.AddError("Looking up principal", fmt.Sprintf("%s: %q -> %q (%s)", errSAEmailMismatch, email, sa.GetEmail(), sa.GetId()))
-
-		return
-	}
-
-	config.S2R = types.StringValue(sa.GetId())
-	config.Kind = types.StringValue("service_account")
-	config.DisplayName = types.StringValue(sa.GetName())
-	resp.Diagnostics.Append(resp.State.Set(ctx, config)...)
-}
-
-// deploymentFromS2R extracts the deployment segment from an s2r URI
-// (s2r:{deployment}:{kind}:{id}).
-func deploymentFromS2R(s2r string) (string, error) {
+// principalKindFromS2R maps the kind segment of a principal s2r
+// (s2r:{deployment}:{kind}:{id}) to the data source's kind value.
+func principalKindFromS2R(s2r string) (string, error) {
 	parts := strings.SplitN(s2r, ":", 4)
-	if len(parts) < 4 || parts[0] != "s2r" || parts[1] == "" {
-		return "", fmt.Errorf("%w: %q", errBadOrgS2R, s2r)
+	if len(parts) < 4 || parts[0] != "s2r" {
+		return "", fmt.Errorf("%w: %q", errBadPrincipalS2R, s2r)
 	}
-
-	return parts[1], nil
+	switch parts[2] {
+	case "usr":
+		return "user", nil
+	case "sa":
+		return "service_account", nil
+	default:
+		return "", fmt.Errorf("%w: %q (unexpected kind %q)", errBadPrincipalS2R, s2r, parts[2])
+	}
 }
