@@ -340,22 +340,28 @@ func (r *groupResource) fetchLocalGroup(ctx context.Context, groupS2R string, di
 }
 
 func (r *groupResource) listMemberPrincipals(ctx context.Context, groupS2R string) ([]string, error) {
-	membersResp, err := r.client.OrgService.ListGroupMembers(ctx, connect.NewRequest(&orgsvcv1.ListGroupMembersRequest{
-		GroupS2R: groupS2R,
-	}))
-	if err != nil {
-		return nil, err
-	}
-	principals := make([]string, 0, len(membersResp.Msg.GetMembers()))
-	for _, m := range membersResp.Msg.GetMembers() {
-		p := m.GetPrincipalS2R()
-		if p == "" {
-			return nil, fmt.Errorf("%w for group %s", errEmptyMemberPrincipal, groupS2R)
+	principals := []string{} // non-nil: an empty group is an empty set, not null
+	cursor := ""
+	for {
+		membersResp, err := r.client.OrgService.ListGroupMembers(ctx, connect.NewRequest(&orgsvcv1.ListGroupMembersRequest{
+			GroupS2R: groupS2R,
+			Cursor:   cursor,
+		}))
+		if err != nil {
+			return nil, err
 		}
-		principals = append(principals, p)
+		for _, m := range membersResp.Msg.GetMembers() {
+			p := m.GetPrincipalS2R()
+			if p == "" {
+				return nil, fmt.Errorf("%w for group %s", errEmptyMemberPrincipal, groupS2R)
+			}
+			principals = append(principals, p)
+		}
+		cursor = membersResp.Msg.GetNextCursor()
+		if cursor == "" {
+			return principals, nil
+		}
 	}
-
-	return principals, nil
 }
 
 // reconcileMembers applies the membership diff from state to plan:

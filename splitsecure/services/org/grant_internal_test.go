@@ -2,10 +2,15 @@ package org
 
 import (
 	"context"
+	"strings"
 	"testing"
 
+	"github.com/hashicorp/terraform-plugin-framework/diag"
+	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	rschema "github.com/hashicorp/terraform-plugin-framework/resource/schema"
+	"github.com/hashicorp/terraform-plugin-framework/schema/validator"
+	"github.com/hashicorp/terraform-plugin-framework/types"
 
 	authzv1 "github.com/splitsecure/apis/gen/go/proto/splitsecure/authz/v1"
 )
@@ -48,13 +53,25 @@ func TestGrantSchema_ReplaceSemantics(t *testing.T) {
 
 	s := grantTestSchema(t)
 
+	ctx := context.Background()
 	for _, name := range []string{"resource_s2r", "grantee_s2r"} {
 		attr, ok := s.Attributes[name].(rschema.StringAttribute)
 		if !ok {
 			t.Fatalf("attribute %q has wrong type: %T", name, s.Attributes[name])
 		}
 		if len(attr.PlanModifiers) == 0 {
-			t.Errorf("attribute %q should have a RequiresReplace plan modifier", name)
+			t.Fatalf("attribute %q has no plan modifiers", name)
+		}
+		// Not just any modifier: at least one must carry requires-replace
+		// semantics (RequiresReplace's description says the resource is recreated).
+		replaces := false
+		for _, mod := range attr.PlanModifiers {
+			if strings.Contains(strings.ToLower(mod.Description(ctx)), "recreate") {
+				replaces = true
+			}
+		}
+		if !replaces {
+			t.Errorf("attribute %q should force replacement on change", name)
 		}
 	}
 
@@ -67,17 +84,38 @@ func TestGrantSchema_ReplaceSemantics(t *testing.T) {
 	}
 }
 
-func TestGrantSchema_TierHasOneOfValidator(t *testing.T) {
+// TestGrantSchema_TierValidatorAcceptsTiers executes the tier validators: every
+// real tier passes and an unknown value is rejected.
+func TestGrantSchema_TierValidatorAcceptsTiers(t *testing.T) {
 	t.Parallel()
 
 	s := grantTestSchema(t)
+	ctx := context.Background()
 
 	tier, ok := s.Attributes["tier"].(rschema.StringAttribute)
 	if !ok {
 		t.Fatalf("tier attribute has wrong type: %T", s.Attributes["tier"])
 	}
-	if len(tier.Validators) == 0 {
-		t.Fatal("tier should have at least one validator (OneOf)")
+
+	validate := func(value string) diag.Diagnostics {
+		var resp validator.StringResponse
+		for _, v := range tier.Validators {
+			v.ValidateString(ctx, validator.StringRequest{
+				Path:        path.Root("tier"),
+				ConfigValue: types.StringValue(value),
+			}, &resp)
+		}
+
+		return resp.Diagnostics
+	}
+
+	for _, v := range tierValues() {
+		if d := validate(v); d.HasError() {
+			t.Errorf("tier %q should be accepted, got: %v", v, d)
+		}
+	}
+	if d := validate("bogus-tier"); !d.HasError() {
+		t.Error(`tier "bogus-tier" should be rejected`)
 	}
 }
 

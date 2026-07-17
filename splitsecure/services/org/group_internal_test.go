@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -32,6 +33,7 @@ type fakeOrgClient struct {
 	addResults  []*orgsvcv1.AddGroupMembersResponse_Result
 	addErr      error
 	listMembers []*orgsvcv1.GroupMember
+	listPages   [][]*orgsvcv1.GroupMember // when set, ListGroupMembers serves these pages via cursor
 	listErr     error
 }
 
@@ -66,10 +68,22 @@ func (f *fakeOrgClient) AddGroupMembers(
 }
 
 func (f *fakeOrgClient) ListGroupMembers(
-	_ context.Context, _ *connect.Request[orgsvcv1.ListGroupMembersRequest],
+	_ context.Context, req *connect.Request[orgsvcv1.ListGroupMembersRequest],
 ) (*connect.Response[orgsvcv1.ListGroupMembersResponse], error) {
 	if f.listErr != nil {
 		return nil, f.listErr
+	}
+	if f.listPages != nil { // paginated mode: the cursor is the page index
+		i := 0
+		if c := req.Msg.GetCursor(); c != "" {
+			i, _ = strconv.Atoi(c)
+		}
+		resp := &orgsvcv1.ListGroupMembersResponse{Members: f.listPages[i]}
+		if i+1 < len(f.listPages) {
+			resp.NextCursor = strconv.Itoa(i + 1)
+		}
+
+		return connect.NewResponse(resp), nil
 	}
 
 	return connect.NewResponse(&orgsvcv1.ListGroupMembersResponse{Members: f.listMembers}), nil
@@ -447,6 +461,26 @@ func TestListMemberPrincipals_RejectsEmptyPrincipal(t *testing.T) {
 	_, err := r.listMemberPrincipals(context.Background(), "s2r:test:group:x/y")
 	if !errors.Is(err, errEmptyMemberPrincipal) {
 		t.Fatalf("err = %v, want errEmptyMemberPrincipal", err)
+	}
+}
+
+func TestListMemberPrincipals_ConsumesAllPages(t *testing.T) {
+	t.Parallel()
+
+	r := &groupResource{client: &client.Client{OrgService: &fakeOrgClient{
+		listPages: [][]*orgsvcv1.GroupMember{
+			{{PrincipalS2R: "s2r:test:usr:a"}, {PrincipalS2R: "s2r:test:usr:b"}},
+			{{PrincipalS2R: "s2r:test:usr:c"}},
+		},
+	}}}
+
+	got, err := r.listMemberPrincipals(context.Background(), "s2r:test:group:x/y")
+	if err != nil {
+		t.Fatalf("listMemberPrincipals: %v", err)
+	}
+	want := []string{"s2r:test:usr:a", "s2r:test:usr:b", "s2r:test:usr:c"}
+	if !slices.Equal(got, want) {
+		t.Fatalf("got %v, want %v (both pages must be consumed)", got, want)
 	}
 }
 
