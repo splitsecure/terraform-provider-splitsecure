@@ -134,7 +134,7 @@ func (d *principalDataSource) Read(ctx context.Context, req datasource.ReadReque
 // (s2r:{deployment}:{kind}:{id}) to the data source's kind value.
 func principalKindFromS2R(s2r string) (string, error) {
 	parts := strings.SplitN(s2r, ":", 4)
-	if len(parts) < 4 || parts[0] != "s2r" {
+	if len(parts) < 4 || parts[0] != "s2r" || parts[1] == "" || parts[3] == "" {
 		return "", fmt.Errorf("%w: %q", errBadPrincipalS2R, s2r)
 	}
 	switch parts[2] {

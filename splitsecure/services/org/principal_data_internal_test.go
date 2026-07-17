@@ -15,6 +15,8 @@ func TestPrincipalKindFromS2R(t *testing.T) {
 		{name: "service account", s2r: "s2r:local-aliaksei:sa:abc123", want: "service_account"},
 		{name: "unexpected kind", s2r: "s2r:us:group:abc123", wantError: true},
 		{name: "too few segments", s2r: "s2r:us:usr", wantError: true},
+		{name: "empty deployment", s2r: "s2r::usr:abc123", wantError: true},
+		{name: "empty id", s2r: "s2r:us:usr:", wantError: true},
 		{name: "not an s2r", s2r: "usr:abc123", wantError: true},
 		{name: "empty", s2r: "", wantError: true},
 	}

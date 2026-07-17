@@ -3,20 +3,18 @@
 page_title: "splitsecure_principal Data Source - SplitSecure"
 subcategory: ""
 description: |-
-  Resolves an org principal (user or service account) to its s2r by the email shown in the console. User emails resolve via the member directory; service-account emails parse directly to their sa: s2r. Use the s2r as a group member or grant grantee.
+  Resolves an org principal (user or service account) to its s2r by the email shown in the console. Use the s2r as a group member or grant grantee.
 ---
 
 # splitsecure_principal (Data Source)
 
-Resolves an org principal (user or service account) to its s2r by the email shown in the console. User emails resolve via the member directory; service-account emails parse directly to their sa: s2r. Use the s2r as a group member or grant grantee.
+Resolves an org principal (user or service account) to its s2r by the email shown in the console. Use the s2r as a group member or grant grantee.
 
 ## Example Usage
 
 ```terraform
-# Resolve an org principal to its s2r by the email shown in the console.
-# Works for both users and service accounts: user emails resolve via the
-# member directory; a service-account email parses directly to its sa:
-# s2r. Use the s2r as a group member or grant grantee.
+# Resolve an org principal (user or service account) to its s2r by the email
+# shown in the console. Use the s2r as a group member or grant grantee.
 
 # A human user.
 data "splitsecure_principal" "alice" {
