@@ -7,43 +7,41 @@ import (
 	orgsvcv1 "github.com/splitsecure/apis/gen/go/proto/splitsecure/orgsvc/v1"
 )
 
-func TestMatchMemberByEmail(t *testing.T) {
+func TestSingleMember(t *testing.T) {
 	t.Parallel()
 
-	members := []*orgsvcv1.Member{
-		{UserId: "s2r:us:usr:alice", Email: "alice@example.com", DisplayName: "Alice"},
-		{UserId: "s2r:us:usr:bob", Email: "Bob@Example.COM", DisplayName: "Bob"},
-		{UserId: "s2r:us:usr:carol1", Email: "carol@example.com", DisplayName: "Carol One"},
-		{UserId: "s2r:us:usr:carol2", Email: "CAROL@example.com", DisplayName: "Carol Two"},
+	// The server resolves emails to members (canonicalization, ambiguity); the
+	// client only extracts the single member from the per-email Result. Matching
+	// is by the request email string the server echoes back.
+	result := func(email string, members ...*orgsvcv1.Member) *orgsvcv1.GetMembersByEmailResponse_Result {
+		return &orgsvcv1.GetMembersByEmailResponse_Result{Email: email, Members: members}
 	}
+	alice := &orgsvcv1.Member{UserId: "s2r:us:usr:alice", Email: "alice@example.com", DisplayName: "Alice"}
+	carol1 := &orgsvcv1.Member{UserId: "s2r:us:usr:carol1", Email: "carol@example.com", DisplayName: "Carol One"}
+	carol2 := &orgsvcv1.Member{UserId: "s2r:us:usr:carol2", Email: "carol@example.com", DisplayName: "Carol Two"}
 
 	cases := []struct {
 		name        string
 		email       string
+		results     []*orgsvcv1.GetMembersByEmailResponse_Result
 		wantUserID  string
 		wantErrPart string // empty means the lookup must succeed
 	}{
-		{name: "exact match", email: "alice@example.com", wantUserID: "s2r:us:usr:alice"},
-		{name: "case-insensitive match", email: "bob@example.com", wantUserID: "s2r:us:usr:bob"},
-		{name: "mixed-case query matches stored lowercase", email: "ALICE@EXAMPLE.COM", wantUserID: "s2r:us:usr:alice"},
-		{name: "ambiguous email returns error listing matches", email: "carol@example.com", wantErrPart: "s2r:us:usr:carol2"},
-		{name: "absent email returns error naming the email", email: "dave@example.com", wantErrPart: "dave@example.com"},
-		{name: "empty member list returns error", email: "alice@example.com", wantErrPart: "alice@example.com"},
+		{name: "single member resolves", email: "alice@example.com", results: []*orgsvcv1.GetMembersByEmailResponse_Result{result("alice@example.com", alice)}, wantUserID: "s2r:us:usr:alice"},
+		{name: "ambiguous email returns error listing matches", email: "carol@example.com", results: []*orgsvcv1.GetMembersByEmailResponse_Result{result("carol@example.com", carol1, carol2)}, wantErrPart: "s2r:us:usr:carol2"},
+		{name: "empty members returns error naming the email", email: "dave@example.com", results: []*orgsvcv1.GetMembersByEmailResponse_Result{result("dave@example.com")}, wantErrPart: "dave@example.com"},
+		{name: "no matching result returns error naming the email", email: "erin@example.com", results: []*orgsvcv1.GetMembersByEmailResponse_Result{result("alice@example.com", alice)}, wantErrPart: "erin@example.com"},
+		{name: "empty results returns error", email: "alice@example.com", results: nil, wantErrPart: "alice@example.com"},
 	}
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 
-			in := members
-			if tc.name == "empty member list returns error" {
-				in = nil
-			}
-
-			got, err := matchMemberByEmail(in, tc.email)
+			got, err := singleMember(tc.results, tc.email)
 			if tc.wantErrPart != "" {
 				if err == nil {
-					t.Fatalf("matchMemberByEmail(%q) = %+v, want error", tc.email, got)
+					t.Fatalf("singleMember(%q) = %+v, want error", tc.email, got)
 				}
 				if !strings.Contains(err.Error(), tc.wantErrPart) {
 					t.Fatalf("error %q does not contain %q", err.Error(), tc.wantErrPart)
@@ -52,7 +50,7 @@ func TestMatchMemberByEmail(t *testing.T) {
 				return
 			}
 			if err != nil {
-				t.Fatalf("matchMemberByEmail(%q): %v", tc.email, err)
+				t.Fatalf("singleMember(%q): %v", tc.email, err)
 			}
 			if got.GetUserId() != tc.wantUserID {
 				t.Fatalf("got user %q, want %q", got.GetUserId(), tc.wantUserID)

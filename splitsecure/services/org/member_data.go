@@ -79,23 +79,27 @@ func (d *memberDataSource) Read(ctx context.Context, req datasource.ReadRequest,
 		return
 	}
 
-	listResp, err := d.client.OrgService.ListMembers(ctx, connect.NewRequest(&orgsvcv1.ListMembersRequest{
-		Base: &orgsvcv1.ListMembersRequest_Base{OrganizationId: d.client.OrgS2R},
+	email := config.Email.ValueString()
+	membersResp, err := d.client.OrgService.GetMembersByEmail(ctx, connect.NewRequest(&orgsvcv1.GetMembersByEmailRequest{
+		Base: &orgsvcv1.GetMembersByEmailRequest_Base{
+			OrganizationId: d.client.OrgS2R,
+			Emails:         []string{email},
+		},
 	}))
 	if err != nil {
-		resp.Diagnostics.AddError("ListMembers", err.Error())
+		resp.Diagnostics.AddError("GetMembersByEmail", err.Error())
 
 		return
 	}
 
-	member, err := matchMemberByEmail(listResp.Msg.GetMembers(), config.Email.ValueString())
+	member, err := singleMember(membersResp.Msg.GetResults(), email)
 	if err != nil {
 		resp.Diagnostics.AddError("Looking up org member", err.Error())
 
 		return
 	}
 	if member.GetUserId() == "" {
-		resp.Diagnostics.AddError("Looking up org member", fmt.Sprintf("%s: %s", errEmptyMemberUserID, config.Email.ValueString()))
+		resp.Diagnostics.AddError("Looking up org member", fmt.Sprintf("%s: %s", errEmptyMemberUserID, email))
 
 		return
 	}
@@ -105,27 +109,31 @@ func (d *memberDataSource) Read(ctx context.Context, req datasource.ReadRequest,
 	resp.Diagnostics.Append(resp.State.Set(ctx, &config)...)
 }
 
-// matchMemberByEmail returns the single member whose email equals the
-// given email case-insensitively. Zero or multiple matches are errors.
-func matchMemberByEmail(members []*orgsvcv1.Member, email string) (*orgsvcv1.Member, error) {
-	var matches []*orgsvcv1.Member
-	for _, m := range members {
-		if strings.EqualFold(m.GetEmail(), email) {
-			matches = append(matches, m)
+// singleMember extracts the one member the server resolved for email. The RPC
+// returns one Result per requested email (in request order) with the matching
+// already done server-side; here zero members means no such member and multiple
+// means the address is ambiguous — both errors.
+func singleMember(results []*orgsvcv1.GetMembersByEmailResponse_Result, email string) (*orgsvcv1.Member, error) {
+	var members []*orgsvcv1.Member
+	for _, r := range results {
+		if r.GetEmail() == email {
+			members = r.GetMembers()
+
+			break
 		}
 	}
 
-	switch len(matches) {
+	switch len(members) {
 	case 0:
 		return nil, fmt.Errorf("%w with email %q", errNoOrgMember, email)
 	case 1:
-		return matches[0], nil
+		return members[0], nil
 	default:
-		ids := make([]string, len(matches))
-		for i, m := range matches {
+		ids := make([]string, len(members))
+		for i, m := range members {
 			ids[i] = m.GetUserId()
 		}
 
-		return nil, fmt.Errorf("%w: %q matches %d members: %s", errAmbiguousMemberEmail, email, len(matches), strings.Join(ids, ", "))
+		return nil, fmt.Errorf("%w: %q matches %d members: %s", errAmbiguousMemberEmail, email, len(members), strings.Join(ids, ", "))
 	}
 }
