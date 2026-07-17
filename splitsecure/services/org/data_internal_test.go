@@ -13,8 +13,8 @@ func TestSingleMember(t *testing.T) {
 	// The server resolves emails to members (canonicalization, ambiguity); the
 	// client only extracts the single member from the per-email Result. Matching
 	// is by the request email string the server echoes back.
-	result := func(email string, members ...*orgsvcv1.Member) *orgsvcv1.GetMembersByEmailResponse_Result {
-		return &orgsvcv1.GetMembersByEmailResponse_Result{Email: email, Members: members}
+	oneResult := func(email string, members ...*orgsvcv1.Member) []*orgsvcv1.GetMembersByEmailResponse_Result {
+		return []*orgsvcv1.GetMembersByEmailResponse_Result{{Email: email, Members: members}}
 	}
 	alice := &orgsvcv1.Member{UserId: "s2r:us:usr:alice", Email: "alice@example.com", DisplayName: "Alice"}
 	carol1 := &orgsvcv1.Member{UserId: "s2r:us:usr:carol1", Email: "carol@example.com", DisplayName: "Carol One"}
@@ -27,10 +27,10 @@ func TestSingleMember(t *testing.T) {
 		wantUserID  string
 		wantErrPart string // empty means the lookup must succeed
 	}{
-		{name: "single member resolves", email: "alice@example.com", results: []*orgsvcv1.GetMembersByEmailResponse_Result{result("alice@example.com", alice)}, wantUserID: "s2r:us:usr:alice"},
-		{name: "ambiguous email returns error listing matches", email: "carol@example.com", results: []*orgsvcv1.GetMembersByEmailResponse_Result{result("carol@example.com", carol1, carol2)}, wantErrPart: "s2r:us:usr:carol2"},
-		{name: "empty members returns error naming the email", email: "dave@example.com", results: []*orgsvcv1.GetMembersByEmailResponse_Result{result("dave@example.com")}, wantErrPart: "dave@example.com"},
-		{name: "no matching result returns error naming the email", email: "erin@example.com", results: []*orgsvcv1.GetMembersByEmailResponse_Result{result("alice@example.com", alice)}, wantErrPart: "erin@example.com"},
+		{name: "single member resolves", email: "alice@example.com", results: oneResult("alice@example.com", alice), wantUserID: "s2r:us:usr:alice"},
+		{name: "ambiguous email returns error listing matches", email: "carol@example.com", results: oneResult("carol@example.com", carol1, carol2), wantErrPart: "s2r:us:usr:carol2"},
+		{name: "empty members returns error naming the email", email: "dave@example.com", results: oneResult("dave@example.com"), wantErrPart: "dave@example.com"},
+		{name: "no matching result returns error naming the email", email: "erin@example.com", results: oneResult("alice@example.com", alice), wantErrPart: "erin@example.com"},
 		{name: "empty results returns error", email: "alice@example.com", results: nil, wantErrPart: "alice@example.com"},
 	}
 
