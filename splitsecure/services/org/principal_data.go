@@ -98,7 +98,13 @@ func (d *principalDataSource) Read(ctx context.Context, req datasource.ReadReque
 		return
 	}
 
-	members := membersResp.Msg.GetMembers()
+	// One email in, one result out (results are per requested email); its members
+	// are the matches for that email.
+	results := membersResp.Msg.GetResults()
+	var members []*orgsvcv1.Member
+	if len(results) > 0 {
+		members = results[0].GetMembers()
+	}
 	switch {
 	case len(members) == 0:
 		resp.Diagnostics.AddError("Looking up principal", fmt.Sprintf("%s with email %q", errNoPrincipal, email))
