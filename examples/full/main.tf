@@ -16,16 +16,6 @@ provider "splitsecure" {
 
 provider "aws" {}
 
-variable "org_s2r" {
-  type        = string
-  description = "Org s2r URI hosting the team below. Used by the provider to spawn the proposal-scoped managed enclave on every Create / Delete."
-}
-
-variable "team_s2r" {
-  type        = string
-  description = "Team s2r URI that owns the IdP and SP. Voters on this team approve every Create / Delete proposal."
-}
-
 data "aws_caller_identity" "current" {}
 
 locals {
@@ -158,4 +148,34 @@ output "aws_admin_role_arn" {
 output "aws_readonly_role_arn" {
   value       = aws_iam_role.readonly.arn
   description = "ARN of the readonly role users assume via SAML."
+}
+
+# --- Access -------------------------------------------------------
+# Terraform-managed permissions on the SP. Without grants, only org
+# owners/admins (and the creating service account) can see it.
+
+data "splitsecure_organization" "current" {}
+
+# Resolve each console email to its principal s2r (users and service
+# accounts alike), so callers paste emails rather than raw s2rs.
+data "splitsecure_principal" "operators" {
+  for_each = toset(var.operator_emails)
+  email    = each.value
+}
+
+resource "splitsecure_group" "operators" {
+  name    = "aws-federation-operators-${local.account_id}"
+  members = [for p in data.splitsecure_principal.operators : p.s2r]
+}
+
+resource "splitsecure_grant" "operators_use" {
+  resource_s2r = splitsecure_saml2_service_provider.main.id
+  grantee_s2r  = splitsecure_group.operators.group_s2r
+  tier         = "use"
+}
+
+resource "splitsecure_grant" "org_view" {
+  resource_s2r = splitsecure_saml2_service_provider.main.id
+  grantee_s2r  = data.splitsecure_organization.current.everyone_group_s2r
+  tier         = "view"
 }

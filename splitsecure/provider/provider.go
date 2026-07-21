@@ -12,6 +12,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/types"
 
 	"github.com/splitsecure/terraform-provider-splitsecure/splitsecure/client"
+	"github.com/splitsecure/terraform-provider-splitsecure/splitsecure/services/org"
 	"github.com/splitsecure/terraform-provider-splitsecure/splitsecure/services/saml2"
 )
 
@@ -109,9 +110,16 @@ func (p *splitsecureProvider) Resources(_ context.Context) []func() resource.Res
 	return []func() resource.Resource{
 		saml2.NewIdentityProvider,
 		saml2.NewServiceProvider,
+		org.NewGrant,
+		org.NewGroup,
 	}
 }
 
 func (p *splitsecureProvider) DataSources(_ context.Context) []func() datasource.DataSource {
-	return nil
+	return []func() datasource.DataSource{
+		org.NewOrganizationDataSource,
+		org.NewMemberDataSource,
+		org.NewPrincipalDataSource,
+		org.NewGroupDataSource,
+	}
 }
