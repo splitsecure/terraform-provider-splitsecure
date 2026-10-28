@@ -157,6 +157,43 @@ func TestSendAndAwaitResource_RejectedProposal(t *testing.T) {
 	}
 }
 
+func TestSendAndAwaitResource_TerminalStatuses(t *testing.T) {
+	t.Parallel()
+
+	cases := map[string]*proposalsv1.ProposalStatus{
+		"denied":  {Status: &proposalsv1.ProposalStatus_Denied_{Denied: &proposalsv1.ProposalStatus_Denied{}}},
+		"expired": {Status: &proposalsv1.ProposalStatus_Expired_{Expired: &proposalsv1.ProposalStatus_Expired{}}},
+	}
+	for name, status := range cases {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			c := &client.Client{
+				EnclaveRoundtripService: &fakeERTSClient{
+					sendFn: func(_ context.Context, _ *sendReq) (*sendResp, error) {
+						return connect.NewResponse(&enclaveroundtripv1.SendResponse{RequestId: []byte("req")}), nil
+					},
+					getProposalFn: func(_ context.Context, _ *gp4rReq) (*gp4rResp, error) {
+						return connect.NewResponse(&enclaveroundtripv1.GetProposalForRequestResponse{ProposalId: []byte("prop")}), nil
+					},
+				},
+				ProposalsService: &fakeProposalsClient{
+					getProposalFn: func(_ context.Context, _ *getPropReq) (*getPropResp, error) {
+						return connect.NewResponse(&proposalsv1.GetProposalResponse{
+							Metadata: &proposalsv1.ProposalMetadata{Status: status},
+						}), nil
+					},
+				},
+			}
+
+			_, err := sendAndAwaitResource(context.Background(), c, "s2r:us:org:foo", &enclavev1.InvokeRequest{}, time.Second)
+			if !errors.Is(err, errProposalRejected) {
+				t.Fatalf("error = %v, want errProposalRejected wrapping", err)
+			}
+		})
+	}
+}
+
 func TestSendAndAwaitResource_OrgRequired(t *testing.T) {
 	t.Parallel()
 
