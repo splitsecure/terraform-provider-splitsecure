@@ -19,6 +19,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/types"
 
 	orgsvcv1 "github.com/splitsecure/apis/gen/go/proto/splitsecure/orgsvc/v1"
+	pagev1 "github.com/splitsecure/apis/gen/go/proto/splitsecure/page/v1"
 	"github.com/splitsecure/terraform-provider-splitsecure/splitsecure/client"
 )
 
@@ -341,11 +342,11 @@ func (r *groupResource) fetchLocalGroup(ctx context.Context, groupS2R string, di
 
 func (r *groupResource) listMemberPrincipals(ctx context.Context, groupS2R string) ([]string, error) {
 	principals := []string{} // non-nil: an empty group is an empty set, not null
-	cursor := ""
+	var cursor []byte
 	for {
 		membersResp, err := r.client.OrgService.ListGroupMembers(ctx, connect.NewRequest(&orgsvcv1.ListGroupMembersRequest{
 			GroupS2R: groupS2R,
-			Cursor:   cursor,
+			Page:     pageAfter(cursor),
 		}))
 		if err != nil {
 			return nil, err
@@ -358,9 +359,23 @@ func (r *groupResource) listMemberPrincipals(ctx context.Context, groupS2R strin
 			principals = append(principals, p)
 		}
 		cursor = membersResp.Msg.GetNextCursor()
-		if cursor == "" {
+		if len(cursor) == 0 {
 			return principals, nil
 		}
+	}
+}
+
+// pageAfter builds the page request for a list call: the first page when
+// cursor is empty, the page after cursor otherwise.
+func pageAfter(cursor []byte) *pagev1.PageParams {
+	if len(cursor) == 0 {
+		return nil
+	}
+
+	return &pagev1.PageParams{
+		DirectionOrCursor: &pagev1.PageParams_DirectionOrCursor{
+			Union: &pagev1.PageParams_DirectionOrCursor_Cursor{Cursor: cursor},
+		},
 	}
 }
 

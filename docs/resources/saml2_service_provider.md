@@ -68,7 +68,7 @@ resource "splitsecure_saml2_service_provider" "aws_console" {
 
 Required:
 
-- `kind` (String) Integration variant. One of: aws, cloudflare, event_brite, gcp, google_workspace, google_workspace_legacy, ibm_cloud, kandji, microsoft_entra_id, okta, oracle_cloud, pager_duty, pitch_book, rapid7, stripe, veeam, workday.
+- `kind` (String) Integration variant. One of: aws, cloudflare, event_brite, gcp, google_workspace, google_workspace_legacy, ibm_cloud, iru, microsoft_entra_id, okta, oracle_cloud, pager_duty, pitch_book, rapid7, stripe, veeam, workday.
 
 Optional:
 
@@ -79,7 +79,7 @@ Optional:
 - `google_workspace` (Block, Optional) Google Workspace account. (see [below for nested schema](#nestedblock--account--google_workspace))
 - `google_workspace_legacy` (Block, Optional) Legacy Google Workspace SAML integration. (see [below for nested schema](#nestedblock--account--google_workspace_legacy))
 - `ibm_cloud` (Block, Optional) IBM Cloud SAML integration. (see [below for nested schema](#nestedblock--account--ibm_cloud))
-- `kandji` (Block, Optional) Kandji SAML integration. (see [below for nested schema](#nestedblock--account--kandji))
+- `iru` (Block, Optional) Iru SAML integration. (see [below for nested schema](#nestedblock--account--iru))
 - `microsoft_entra_id` (Block, Optional) Microsoft Entra ID account. (see [below for nested schema](#nestedblock--account--microsoft_entra_id))
 - `okta` (Block, Optional) Okta SAML integration. (see [below for nested schema](#nestedblock--account--okta))
 - `oracle_cloud` (Block, Optional) Oracle Cloud account. (see [below for nested schema](#nestedblock--account--oracle_cloud))
@@ -141,8 +141,8 @@ Optional:
 - `login_url` (String) IBM Cloud login URL. Required when account.kind = "ibm_cloud".
 
 
-<a id="nestedblock--account--kandji"></a>
-### Nested Schema for `account.kandji`
+<a id="nestedblock--account--iru"></a>
+### Nested Schema for `account.iru`
 
 Optional:
 

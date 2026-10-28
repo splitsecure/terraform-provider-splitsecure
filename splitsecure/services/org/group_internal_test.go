@@ -75,12 +75,12 @@ func (f *fakeOrgClient) ListGroupMembers(
 	}
 	if f.listPages != nil { // paginated mode: the cursor is the page index
 		i := 0
-		if c := req.Msg.GetCursor(); c != "" {
-			i, _ = strconv.Atoi(c)
+		if c := req.Msg.GetPage().GetDirectionOrCursor().GetCursor(); len(c) > 0 {
+			i, _ = strconv.Atoi(string(c))
 		}
 		resp := &orgsvcv1.ListGroupMembersResponse{Members: f.listPages[i]}
 		if i+1 < len(f.listPages) {
-			resp.NextCursor = strconv.Itoa(i + 1)
+			resp.NextCursor = []byte(strconv.Itoa(i + 1))
 		}
 
 		return connect.NewResponse(resp), nil

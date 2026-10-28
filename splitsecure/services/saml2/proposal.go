@@ -173,8 +173,8 @@ func awaitProposalID(ctx context.Context, c *client.Client, requestID []byte) ([
 }
 
 // awaitProposalTerminal polls GetProposal until the proposal reaches
-// Completed or Error. Returns the error message when the proposal
-// fails, so callers can surface it to terraform.
+// Completed, Error, Denied or Expired. Returns the reason when the
+// proposal does not complete, so callers can surface it to terraform.
 func awaitProposalTerminal(ctx context.Context, c *client.Client, proposalID []byte) error {
 	for {
 		resp, err := c.ProposalsService.GetProposal(ctx, connect.NewRequest(&proposalsv1.GetProposalRequest{
@@ -190,6 +190,10 @@ func awaitProposalTerminal(ctx context.Context, c *client.Client, proposalID []b
 			return nil
 		case *proposalsv1.ProposalStatus_Error_:
 			return fmt.Errorf("%w: %s", errProposalRejected, status.Error.GetMessage())
+		case *proposalsv1.ProposalStatus_Denied_:
+			return fmt.Errorf("%w: declined by reviewers", errProposalRejected)
+		case *proposalsv1.ProposalStatus_Expired_:
+			return fmt.Errorf("%w: expired before enough reviewers approved", errProposalRejected)
 		case *proposalsv1.ProposalStatus_InProgress_, nil:
 			// Keep polling.
 		}

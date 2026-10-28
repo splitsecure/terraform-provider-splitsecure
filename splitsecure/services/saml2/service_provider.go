@@ -42,7 +42,7 @@ const (
 	kindGoogleWorkspace       = "google_workspace"
 	kindGoogleWorkspaceLegacy = "google_workspace_legacy"
 	kindIBMCloud              = "ibm_cloud"
-	kindKandji                = "kandji"
+	kindIru                   = "iru"
 	kindMicrosoftEntraID      = "microsoft_entra_id"
 	kindOkta                  = "okta"
 	kindOracleCloud           = "oracle_cloud"
@@ -67,7 +67,7 @@ func spAccountKinds() []string {
 		kindGoogleWorkspace,
 		kindGoogleWorkspaceLegacy,
 		kindIBMCloud,
-		kindKandji,
+		kindIru,
 		kindMicrosoftEntraID,
 		kindOkta,
 		kindOracleCloud,
@@ -113,7 +113,7 @@ type accountModel struct {
 	GoogleWorkspace       *accountGoogleWorkspaceModel       `tfsdk:"google_workspace"`
 	GoogleWorkspaceLegacy *accountGoogleWorkspaceLegacyModel `tfsdk:"google_workspace_legacy"`
 	IBMCloud              *accountIBMCloudModel              `tfsdk:"ibm_cloud"`
-	Kandji                *accountKandjiModel                `tfsdk:"kandji"`
+	Iru                   *accountIruModel                   `tfsdk:"iru"`
 	MicrosoftEntraID      *accountMicrosoftEntraIDModel      `tfsdk:"microsoft_entra_id"`
 	Okta                  *accountOktaModel                  `tfsdk:"okta"`
 	OracleCloud           *accountOracleCloudModel           `tfsdk:"oracle_cloud"`
@@ -157,7 +157,7 @@ type accountIBMCloudModel struct {
 	LoginURL types.String `tfsdk:"login_url"`
 }
 
-type accountKandjiModel struct {
+type accountIruModel struct {
 	DefaultEmail types.String `tfsdk:"default_email"`
 }
 
@@ -243,7 +243,7 @@ func (r *saml2ServiceProvider) ValidateConfig(ctx context.Context, req resource.
 		{kindGoogleWorkspace, cfg.Account.GoogleWorkspace != nil},
 		{kindGoogleWorkspaceLegacy, cfg.Account.GoogleWorkspaceLegacy != nil},
 		{kindIBMCloud, cfg.Account.IBMCloud != nil},
-		{kindKandji, cfg.Account.Kandji != nil},
+		{kindIru, cfg.Account.Iru != nil},
 		{kindMicrosoftEntraID, cfg.Account.MicrosoftEntraID != nil},
 		{kindOkta, cfg.Account.Okta != nil},
 		{kindOracleCloud, cfg.Account.OracleCloud != nil},
@@ -447,7 +447,7 @@ func spAccountBlock() schema.SingleNestedBlock {
 			kindGoogleWorkspace:       spEmptyBlock("Google Workspace account."),
 			kindGoogleWorkspaceLegacy: spGoogleWorkspaceLegacyBlock(),
 			kindIBMCloud:              spIBMCloudBlock(),
-			kindKandji:                spKandjiBlock(),
+			kindIru:                   spIruBlock(),
 			kindMicrosoftEntraID:      spEmptyBlock("Microsoft Entra ID account."),
 			kindOkta:                  spOktaBlock(),
 			kindOracleCloud:           spEmptyBlock("Oracle Cloud account."),
@@ -540,9 +540,9 @@ func spIBMCloudBlock() schema.SingleNestedBlock {
 	}
 }
 
-func spKandjiBlock() schema.SingleNestedBlock {
+func spIruBlock() schema.SingleNestedBlock {
 	return schema.SingleNestedBlock{
-		Description: "Kandji SAML integration.",
+		Description: "Iru SAML integration.",
 		Attributes: map[string]schema.Attribute{
 			"default_email": schema.StringAttribute{
 				Optional:    true,
@@ -799,9 +799,9 @@ func setKnownProviderOnSP(ctx context.Context, sp *saml2v2.SAML2ServiceProvider,
 		kp.Union = &providersv1.KnownProvider_IbmCloud{IbmCloud: &providersv1.IBMCloud{
 			LoginUrl: plan.Account.IBMCloud.LoginURL.ValueString(),
 		}}
-	case kindKandji:
-		kp.Union = &providersv1.KnownProvider_Kandji{Kandji: &providersv1.Kandji{
-			DefaultEmail: plan.Account.Kandji.DefaultEmail.ValueString(),
+	case kindIru:
+		kp.Union = &providersv1.KnownProvider_Iru{Iru: &providersv1.Iru{
+			DefaultEmail: plan.Account.Iru.DefaultEmail.ValueString(),
 		}}
 	case kindMicrosoftEntraID:
 		kp.Union = &providersv1.KnownProvider_MicrosoftEntraId{MicrosoftEntraId: &providersv1.MicrosoftEntraID{}}
@@ -940,11 +940,11 @@ func accountFromSP(ctx context.Context, sp *saml2v2.SAML2ServiceProvider, diags 
 			Kind:     types.StringValue(kindIBMCloud),
 			IBMCloud: &accountIBMCloudModel{LoginURL: types.StringValue(a.IbmCloud.GetLoginUrl())},
 		}, kindIBMCloud
-	case *providersv1.KnownProvider_Kandji:
+	case *providersv1.KnownProvider_Iru:
 		return &accountModel{
-			Kind:   types.StringValue(kindKandji),
-			Kandji: &accountKandjiModel{DefaultEmail: types.StringValue(a.Kandji.GetDefaultEmail())},
-		}, kindKandji
+			Kind: types.StringValue(kindIru),
+			Iru:  &accountIruModel{DefaultEmail: types.StringValue(a.Iru.GetDefaultEmail())},
+		}, kindIru
 	case *providersv1.KnownProvider_MicrosoftEntraId:
 		return &accountModel{Kind: types.StringValue(kindMicrosoftEntraID), MicrosoftEntraID: &accountMicrosoftEntraIDModel{}}, kindMicrosoftEntraID
 	case *providersv1.KnownProvider_Okta:

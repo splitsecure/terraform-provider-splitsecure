@@ -62,9 +62,9 @@ func accountVariantFixtures(t *testing.T) map[string]*accountModel {
 			Kind:     types.StringValue(kindIBMCloud),
 			IBMCloud: &accountIBMCloudModel{LoginURL: types.StringValue("https://cloud.ibm.com/login")},
 		},
-		kindKandji: {
-			Kind:   types.StringValue(kindKandji),
-			Kandji: &accountKandjiModel{DefaultEmail: types.StringValue("ops@example.com")},
+		kindIru: {
+			Kind: types.StringValue(kindIru),
+			Iru:  &accountIruModel{DefaultEmail: types.StringValue("ops@example.com")},
 		},
 		kindMicrosoftEntraID: {
 			Kind:             types.StringValue(kindMicrosoftEntraID),
@@ -184,8 +184,8 @@ func assertAccountModelsEqual(t *testing.T, want, got *accountModel) {
 		assertStringEqual(t, "domain_name", want.GoogleWorkspaceLegacy.DomainName, got.GoogleWorkspaceLegacy.DomainName)
 	case kindIBMCloud:
 		assertStringEqual(t, "login_url", want.IBMCloud.LoginURL, got.IBMCloud.LoginURL)
-	case kindKandji:
-		assertStringEqual(t, "default_email", want.Kandji.DefaultEmail, got.Kandji.DefaultEmail)
+	case kindIru:
+		assertStringEqual(t, "default_email", want.Iru.DefaultEmail, got.Iru.DefaultEmail)
 	case kindMicrosoftEntraID:
 		// no fields
 	case kindOkta:
