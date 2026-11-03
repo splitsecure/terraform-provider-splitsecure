@@ -16,8 +16,10 @@ Generated reference docs live in [`docs/`](./docs); per-resource attribute table
 ## Authentication
 
 1. Create a service account in the SplitSecure admin console.
-2. Generate an API key — token format `s2ak_{keyId}_{principalId}_{secret}`.
-3. Set `SPLITSECURE_BEARER_TOKEN` in the environment, or pass `bearer_token` in the provider HCL block.
+2. Register a public key for it (ECDSA P-256, P-384, P-521 or Ed25519; RSA is refused). The console shows the key id.
+3. Give the provider the account s2r, the key id and the private key, through the HCL block or the `SPLITSECURE_SERVICE_ACCOUNT_S2R`, `SPLITSECURE_KEY_ID` and `SPLITSECURE_PRIVATE_KEY` environment variables.
+
+The provider signs a short assertion with the key, exchanges it for a service token and binds every request to a per-process DPoP key. The private key never leaves the machine.
 
 ## Installation (dev override)
 
@@ -39,9 +41,11 @@ write (detected via a marker comment); back it up first if you have one.
 
 ```hcl
 provider "splitsecure" {
-  bearer_token = "s2ak_..."                # or SPLITSECURE_BEARER_TOKEN (the only secret)
-  endpoint     = "https://..."             # or SPLITSECURE_ENDPOINT (defaults to production)
-  org_s2r      = "s2r:<deployment>:org:<org_id>"  # required; or SPLITSECURE_ORG_S2R fallback
+  service_account_s2r = "s2r:<deployment>:sa:<id>"   # or SPLITSECURE_SERVICE_ACCOUNT_S2R
+  key_id              = "..."                         # or SPLITSECURE_KEY_ID
+  private_key         = file("sa.pem")                # or SPLITSECURE_PRIVATE_KEY (the only secret)
+  endpoint            = "https://..."                 # or SPLITSECURE_ENDPOINT (defaults to production)
+  org_s2r             = "s2r:<deployment>:org:<org_id>"  # required; or SPLITSECURE_ORG_S2R fallback
 }
 ```
 
@@ -54,7 +58,9 @@ End-to-end example covering two SplitSecure teams + admin + read-only AWS federa
 ```bash
 cd examples/full
 cp terraform.tfvars.example terraform.tfvars  # fill in your s2r URIs (gitignored)
-export SPLITSECURE_BEARER_TOKEN=s2ak_...
+export SPLITSECURE_SERVICE_ACCOUNT_S2R=s2r:...:sa:...
+export SPLITSECURE_KEY_ID=...
+export SPLITSECURE_PRIVATE_KEY="$(cat sa.pem)"
 terraform plan
 terraform apply -auto-approve
 terraform destroy -auto-approve

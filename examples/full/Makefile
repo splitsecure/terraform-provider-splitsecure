@@ -1,6 +1,7 @@
 # End-to-end smoke test against the splitsecure provider on a real backend.
 #
-# Auth: export SPLITSECURE_BEARER_TOKEN (s2ak_...) before running.
+# Auth: export SPLITSECURE_SERVICE_ACCOUNT_S2R, SPLITSECURE_KEY_ID and
+# SPLITSECURE_PRIVATE_KEY before running.
 
 .PHONY: init plan apply destroy clean help
 

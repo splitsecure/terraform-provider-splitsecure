@@ -12,7 +12,18 @@ import (
 	enclaveroundtripv1connect "github.com/splitsecure/apis/gen/go/proto/splitsecure/enclaveroundtrip/v1/enclaveroundtripv1connect"
 	orgsvcv1connect "github.com/splitsecure/apis/gen/go/proto/splitsecure/orgsvc/v1/orgsvcv1connect"
 	proposalsv1connect "github.com/splitsecure/apis/gen/go/proto/splitsecure/proposals/v1/proposalsv1connect"
+	"github.com/splitsecure/terraform-provider-splitsecure/splitsecure/authn"
 )
+
+// Config is what New needs to reach one deployment as one service account.
+type Config struct {
+	// Endpoint is the API origin, for example https://monolith.example.com.
+	Endpoint string
+	// OrgS2R is the org the provider acts in; see Client.OrgS2R.
+	OrgS2R  string
+	Version string
+	Key     *authn.Key
+}
 
 // Client wraps the SplitSecure Connect RPC clients plus the
 // provider-level org_s2r used for proposal-scoped enclave spawning.
@@ -28,24 +39,34 @@ type Client struct {
 	OrgS2R                  string
 }
 
-// New creates a Client with retries, timeouts, and bearer auth. The
-// overall HTTP timeout is sized for long-running proposal polls: tf
+// New creates a Client with retries, timeouts, and service account auth.
+// The overall HTTP timeout is sized for long-running proposal polls: tf
 // create/delete waits out voter approval over many minutes, so
 // individual RPC calls see unary polls but the wrapper keeps the
 // connection pool happy across retries.
-func New(endpoint, bearerToken, orgS2R, version string) *Client {
-	userAgent := "terraform-provider-splitsecure/" + version
-	withAuth := func(wrapped http.RoundTripper) http.RoundTripper {
-		return &loggingTransport{token: bearerToken, userAgent: userAgent, wrapped: wrapped}
+func New(cfg Config) (*Client, error) {
+	userAgent := "terraform-provider-splitsecure/" + cfg.Version
+
+	// One transport, so every client shares the service token and the DPoP
+	// key it is bound to.
+	auth, err := authn.NewTransport(authn.Config{
+		Endpoint:     cfg.Endpoint,
+		Key:          cfg.Key,
+		Organization: cfg.OrgS2R,
+		UserAgent:    userAgent,
+	})
+	if err != nil {
+		return nil, err
 	}
+	logged := &loggingTransport{userAgent: userAgent, wrapped: auth}
 
 	// Retrying client for the long-running enclave / proposal flow.
 	retryClient := retryablehttp.NewClient()
 	retryClient.RetryMax = 3
 	retryClient.Logger = nil
+	retryClient.HTTPClient.Transport = logged
 	httpClient := retryClient.StandardClient()
 	httpClient.Timeout = 1 * time.Minute
-	httpClient.Transport = withAuth(httpClient.Transport)
 
 	// OrgService carries non-idempotent mutations (CreateGroup / UpdateGroup /
 	// DeleteGroup / PutGrant / DeleteGrant). Every Connect RPC is a POST, so
@@ -54,20 +75,19 @@ func New(endpoint, bearerToken, orgS2R, version string) *Client {
 	// create paths that need it do their own bounded, condition-scoped retries.
 	orgHTTPClient := &http.Client{
 		Timeout:   1 * time.Minute,
-		Transport: withAuth(http.DefaultTransport),
+		Transport: logged,
 	}
 
 	return &Client{
-		ConvenienceStoreService: conveniencestorev1connect.NewConvenienceStoreServiceClient(httpClient, endpoint),
-		EnclaveRoundtripService: enclaveroundtripv1connect.NewEnclaveRoundtripServiceClient(httpClient, endpoint),
-		ProposalsService:        proposalsv1connect.NewProposalsServiceClient(httpClient, endpoint),
-		OrgService:              orgsvcv1connect.NewOrgServiceClient(orgHTTPClient, endpoint),
-		OrgS2R:                  orgS2R,
-	}
+		ConvenienceStoreService: conveniencestorev1connect.NewConvenienceStoreServiceClient(httpClient, cfg.Endpoint),
+		EnclaveRoundtripService: enclaveroundtripv1connect.NewEnclaveRoundtripServiceClient(httpClient, cfg.Endpoint),
+		ProposalsService:        proposalsv1connect.NewProposalsServiceClient(httpClient, cfg.Endpoint),
+		OrgService:              orgsvcv1connect.NewOrgServiceClient(orgHTTPClient, cfg.Endpoint),
+		OrgS2R:                  cfg.OrgS2R,
+	}, nil
 }
 
 type loggingTransport struct {
-	token     string
 	userAgent string
 	wrapped   http.RoundTripper
 }
@@ -76,7 +96,6 @@ func (t *loggingTransport) RoundTrip(req *http.Request) (*http.Response, error) 
 	ctx := req.Context()
 
 	req = req.Clone(ctx)
-	req.Header.Set("Authorization", "Bearer "+t.token)
 	req.Header.Set("User-Agent", t.userAgent)
 
 	tflog.Debug(ctx, "API request", map[string]any{

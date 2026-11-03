@@ -9,8 +9,8 @@ roles, and binds a single SP allowing federation into both roles.
 
 - Terraform 1.6+
 - AWS credentials in the active shell
-- A SplitSecure service-account API key with permission to propose against
-  `team_s2r`
+- A SplitSecure service account with a registered key and permission to
+  propose against `team_s2r`
 
 ## Setup
 
@@ -22,7 +22,9 @@ commands (any standard chain works: `AWS_PROFILE`, `AWS_ACCESS_KEY_ID`/
 ```bash
 cp terraform.tfvars.example terraform.tfvars
 # edit terraform.tfvars: set org_s2r and team_s2r
-export SPLITSECURE_BEARER_TOKEN=s2ak_...
+export SPLITSECURE_SERVICE_ACCOUNT_S2R=s2r:...:sa:...
+export SPLITSECURE_KEY_ID=...
+export SPLITSECURE_PRIVATE_KEY="$(cat sa.pem)"
 ```
 
 ## Usage
