@@ -3,25 +3,36 @@
 page_title: "splitsecure_saml2_identity_provider Resource - SplitSecure"
 subcategory: ""
 description: |-
-  SAML2 identity provider on a SplitSecure team. Create/Delete go through the standard proposal flow; update is not supported (any writable-attribute change replaces the resource).
+  SAML2 identity provider in a SplitSecure vault. Creating or deleting it may need approval, and the call waits for it. There is no in-place update: changing any input replaces the resource.
 ---
 
 # splitsecure_saml2_identity_provider (Resource)
 
-SAML2 identity provider on a SplitSecure team. Create/Delete go through the standard proposal flow; update is not supported (any writable-attribute change replaces the resource).
+SAML2 identity provider in a SplitSecure vault. Creating or deleting it may need approval, and the call waits for it. There is no in-place update: changing any input replaces the resource.
 
 ## Example Usage
 
 ```terraform
+data "splitsecure_vault" "platform" {
+  label = "platform"
+}
+
 resource "splitsecure_saml2_identity_provider" "aws_console" {
-  team_s2r = "s2r:us:team:..."
+  vault_id = data.splitsecure_vault.platform.id
 
   name        = "platform-engineering/aws-123456789012"
   description = "SAML IdP fronting AWS account 123456789012."
-  # provider_id (SAML EntityID) defaults to a six-BIP39-word URL
-  # (matches the web UI). Set explicitly for a stable URN-form
-  # EntityID. sso_url_redirect and sso_url_post are server-assigned
-  # (read-only) and anchor on the deployment's frontend host.
+
+  # Shown to approvers when the create needs approval. Write-only.
+  justification = "Federate the AWS console for platform engineering"
+
+  # Hold the create open for approval before Terraform starts polling.
+  wait = "30s"
+}
+
+resource "aws_iam_saml_provider" "splitsecure" {
+  name                   = "splitsecure"
+  saml_metadata_document = splitsecure_saml2_identity_provider.aws_console.metadata_xml
 }
 ```
 
@@ -30,25 +41,31 @@ resource "splitsecure_saml2_identity_provider" "aws_console" {
 
 ### Required
 
-- `name` (String) Human-readable IdP name.
-- `team_s2r` (String) Team s2r URI the identity provider lives on.
+- `name` (String) Human-readable name. Changing it replaces the resource.
+- `vault_id` (String) Vault the identity provider is created in. Changing it replaces the resource.
 
 ### Optional
 
 > **NOTE**: [Write-only arguments](https://developer.hashicorp.com/terraform/language/resources/ephemeral#write-only-arguments) are supported in Terraform 1.11 and later.
 
-- `description` (String) Free-form description.
-- `justification` (String, [Write-only](https://developer.hashicorp.com/terraform/language/resources/ephemeral#write-only-arguments)) Justification text rendered to voters during the create proposal. Write-only -- never persisted to state. The delete proposal sends a generated 'terraform destroy' justification, so callers don't need to keep this set after the resource exists.
-- `notification_policy` (String) Notification policy for proposals against this IdP. One of: notify_everyone, allow_selective_notifications. Defaults to "notify_everyone".
-- `provider_id` (String) SAML EntityID stamped into the cert subject, the assertion <Issuer>, and the metadata entityID. Leave unset to get a server-generated https://<frontend-host>/saml/idp/<six-bip39-words> identifier (matches the web UI). Set explicitly for a stable URN-form EntityID.
+- `description` (String) Free-form description. Changing it replaces the resource.
+- `justification` (String, [Write-only](https://developer.hashicorp.com/terraform/language/resources/ephemeral#write-only-arguments)) Justification shown to approvers when the create needs approval. Write-only and never stored in state.
+- `not_after` (String) End of the signing certificate validity, as an RFC 3339 timestamp. Defaults to the server's choice. Changing it replaces the resource.
+- `not_before` (String) Start of the signing certificate validity, as an RFC 3339 timestamp. Defaults to the server's choice. Changing it replaces the resource.
+- `notification_policy` (String) Who is notified about requests against the identity provider. One of: notify_everyone, allow_selective_notifications. Changing it replaces the resource.
+- `parent_node_id` (String) Folder node id to place the identity provider under. Empty means the vault root. Changing it replaces the resource.
+- `sensitivity` (String) Sensitivity level of the identity provider. One of: low, medium, high, critical. Changing it replaces the resource.
+- `wait` (String, [Write-only](https://developer.hashicorp.com/terraform/language/resources/ephemeral#write-only-arguments)) How long the server holds the create open for approval before Terraform starts polling, as a Go duration such as "30s". Defaults to 0. Write-only and never stored in state.
 
 ### Read-Only
 
-- `id` (String) Resource s2r URI of the identity provider.
-- `metadata_xml` (String) SAML IdP metadata document built from the IdP's signing certificate, provider_id, and SSO URLs. Suitable for aws_iam_saml_provider.
-- `signing_certificate_der` (String) Base64-encoded DER X.509 signing certificate -- the same bytes as the contents of `signing_certificate_pem` between its BEGIN/END markers. Use this when a downstream consumer wants the unwrapped certificate body (e.g. the `<X509Certificate>` element of an SP metadata document).
-- `signing_certificate_pem` (String) PEM-encoded X.509 signing certificate the IdP attaches to assertions. Suitable for SPs that take the raw certificate (e.g. tls_certificate-style consumers, custom SAML stacks).
-- `signing_public_key_der` (String) Base64-encoded SubjectPublicKeyInfo DER -- the bytes between the BEGIN/END markers of `signing_public_key_pem`.
-- `signing_public_key_pem` (String) PEM-encoded SubjectPublicKeyInfo extracted from the signing certificate. Suitable for SPs that pin a bare public key rather than the wrapping certificate.
-- `sso_url_post` (String) Single sign-on URL (HTTP-POST binding). Server-assigned; not user-configurable.
-- `sso_url_redirect` (String) Single sign-on URL (HTTP-Redirect binding). Server-assigned; not user-configurable.
+- `id` (String) Record id in the vault. Also the import id as vault_id/id.
+- `idp_serial` (String) Serial number of the signing certificate issued to this IdP, in decimal.
+- `metadata_xml` (String) SAML IdP metadata document built from the signing certificate, provider_id and SSO URLs. Suitable for aws_iam_saml_provider.
+- `provider_id` (String) SAML EntityID used in the signing certificate subject, the assertion issuer and the metadata entityID.
+- `signing_certificate_der` (String) Base64-encoded DER of the signing certificate, the bytes between the markers of signing_certificate_pem.
+- `signing_certificate_pem` (String) PEM-encoded X.509 signing certificate the IdP attaches to assertions.
+- `signing_public_key_der` (String) Base64-encoded SubjectPublicKeyInfo DER, the bytes between the markers of signing_public_key_pem.
+- `signing_public_key_pem` (String) PEM-encoded SubjectPublicKeyInfo of the signing certificate, for service providers that pin a bare public key.
+- `sso_url_post` (String) Single sign-on URL for the HTTP-POST binding.
+- `sso_url_redirect` (String) Single sign-on URL for the HTTP-Redirect binding.

@@ -53,6 +53,7 @@ provider "splitsecure" {
 - `service_account_s2r` (String) Required. Service account s2r URI (s2r:<deployment>:sa:<id>). Falls back to SPLITSECURE_SERVICE_ACCOUNT_S2R.
 - `workload_identity` (Block, Optional) Sign in with an external OIDC token instead of a key. The service account needs a binding that matches the token. Leave the block empty inside GitHub Actions to use the job's ID token, which needs the id-token: write permission. (see [below for nested schema](#nestedblock--workload_identity))
 
+<a id="nestedblock--workload_identity"></a>
 ### Nested Schema for `workload_identity`
 
 Optional:
