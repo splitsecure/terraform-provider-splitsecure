@@ -162,6 +162,25 @@ func (p *splitsecureProvider) Configure(ctx context.Context, req provider.Config
 	resp.ResourceData = c
 }
 
+func (p *splitsecureProvider) Resources(_ context.Context) []func() resource.Resource {
+	return []func() resource.Resource{
+		saml2.NewIdentityProviderResource,
+		oidc.NewIssuerResource,
+		org.NewGrant,
+		org.NewGroup,
+	}
+}
+
+func (p *splitsecureProvider) DataSources(_ context.Context) []func() datasource.DataSource {
+	return []func() datasource.DataSource{
+		vault.NewVaultDataSource,
+		org.NewOrganizationDataSource,
+		org.NewMemberDataSource,
+		org.NewPrincipalDataSource,
+		org.NewGroupDataSource,
+	}
+}
+
 // configureCredential fills the key or the workload identity of cfg, and
 // reports whether it succeeded.
 func (p *splitsecureProvider) configureCredential(config *splitsecureProviderModel, cfg *client.Config, diags *diag.Diagnostics) bool {
@@ -247,23 +266,4 @@ func valueOrEnv(v types.String, env string) string {
 	}
 
 	return os.Getenv(env)
-}
-
-func (p *splitsecureProvider) Resources(_ context.Context) []func() resource.Resource {
-	return []func() resource.Resource{
-		saml2.NewIdentityProviderResource,
-		oidc.NewIssuerResource,
-		org.NewGrant,
-		org.NewGroup,
-	}
-}
-
-func (p *splitsecureProvider) DataSources(_ context.Context) []func() datasource.DataSource {
-	return []func() datasource.DataSource{
-		vault.NewVaultDataSource,
-		org.NewOrganizationDataSource,
-		org.NewMemberDataSource,
-		org.NewPrincipalDataSource,
-		org.NewGroupDataSource,
-	}
 }
