@@ -41,7 +41,7 @@ type vaultDataSource struct {
 
 type vaultDataSourceModel struct {
 	ID           types.String `tfsdk:"id"`
-	Label        types.String `tfsdk:"label"`
+	Name         types.String `tfsdk:"name"`
 	OrgS2R       types.String `tfsdk:"org_s2r"`
 	CustodyClass types.String `tfsdk:"custody_class"`
 	Status       types.String `tfsdk:"status"`
@@ -65,12 +65,12 @@ func (d *vaultDataSource) Configure(_ context.Context, req datasource.ConfigureR
 
 func (d *vaultDataSource) Schema(_ context.Context, _ datasource.SchemaRequest, resp *datasource.SchemaResponse) {
 	resp.Schema = schema.Schema{
-		Description: "Resolves a vault by label or by id. Set exactly one of them. A label lookup errors when no vault or more than one vault has the label.",
+		Description: "Resolves a vault by name or by id. Set exactly one of them. A name lookup errors when no vault or more than one vault has the name.",
 		Attributes: map[string]schema.Attribute{
-			"label": schema.StringAttribute{
+			"name": schema.StringAttribute{
 				Optional:    true,
 				Computed:    true,
-				Description: "Label of the vault to resolve. Set exactly one of label and id.",
+				Description: "Name of the vault to resolve. Set exactly one of name and id.",
 				Validators: []validator.String{
 					stringvalidator.LengthAtLeast(1),
 					stringvalidator.ExactlyOneOf(path.MatchRoot("id")),
@@ -84,7 +84,7 @@ func (d *vaultDataSource) Schema(_ context.Context, _ datasource.SchemaRequest, 
 			"id": schema.StringAttribute{
 				Optional:    true,
 				Computed:    true,
-				Description: "Vault id. Use it as the vault_id of vault resources. Set exactly one of label and id.",
+				Description: "Vault id. Use it as the vault_id of vault resources. Set exactly one of name and id.",
 				Validators:  []validator.String{stringvalidator.LengthAtLeast(1)},
 			},
 			"custody_class": schema.StringAttribute{
@@ -114,10 +114,10 @@ func (d *vaultDataSource) Schema(_ context.Context, _ datasource.SchemaRequest, 
 	}
 }
 
-// vaultMatch is a vault found by label. Summary is nil when the vault is only reachable through shared nodes.
+// vaultMatch is a vault found by name. Summary is nil when the vault is only reachable through shared nodes.
 type vaultMatch struct {
 	VaultID   string
-	Label     string
+	Name      string
 	Summary   *vaultcatalogv1.VaultSummary
 	Described *vaultbrowsev1.DescribeVaultResponse
 	Shared    []*vaultcatalogv1.SharedNode
@@ -144,7 +144,7 @@ func (d *vaultDataSource) Read(ctx context.Context, req datasource.ReadRequest, 
 	}
 
 	config.ID = types.StringValue(match.VaultID)
-	config.Label = types.StringValue(match.Label)
+	config.Name = types.StringValue(match.Name)
 	config.OrgS2R = types.StringValue(orgS2R)
 	config.CustodyClass = types.StringNull()
 	config.Status = types.StringNull()
@@ -179,13 +179,13 @@ func (d *vaultDataSource) Read(ctx context.Context, req datasource.ReadRequest, 
 	resp.Diagnostics.Append(resp.State.Set(ctx, &config)...)
 }
 
-// findByLabel looks in the caller's member vaults, then in shared nodes, and errors unless exactly one vault matches.
-func (d *vaultDataSource) findByLabel(ctx context.Context, orgS2R, label string) (*vaultMatch, error) {
+// findByName looks in the caller's member vaults, then in shared nodes, and errors unless exactly one vault matches.
+func (d *vaultDataSource) findByName(ctx context.Context, orgS2R, name string) (*vaultMatch, error) {
 	found := map[string]*vaultMatch{}
 
 	err := d.eachVault(ctx, orgS2R, func(v *vaultcatalogv1.VaultSummary) {
-		if v.GetLabel() == label {
-			found[v.GetVaultId()] = &vaultMatch{VaultID: v.GetVaultId(), Label: v.GetLabel(), Summary: v}
+		if v.GetLabel() == name {
+			found[v.GetVaultId()] = &vaultMatch{VaultID: v.GetVaultId(), Name: v.GetLabel(), Summary: v}
 		}
 	})
 	if err != nil {
@@ -193,13 +193,13 @@ func (d *vaultDataSource) findByLabel(ctx context.Context, orgS2R, label string)
 	}
 
 	err = d.eachShared(ctx, orgS2R, func(n *vaultcatalogv1.SharedNode) {
-		if n.GetVaultLabel() != label {
+		if n.GetVaultLabel() != name {
 			return
 		}
 
 		m, ok := found[n.GetVaultId()]
 		if !ok {
-			m = &vaultMatch{VaultID: n.GetVaultId(), Label: n.GetVaultLabel()}
+			m = &vaultMatch{VaultID: n.GetVaultId(), Name: n.GetVaultLabel()}
 			found[n.GetVaultId()] = m
 		}
 
@@ -330,7 +330,7 @@ func enumName(name, prefix string) string {
 	return strings.ToLower(strings.TrimPrefix(name, prefix))
 }
 
-// lookup resolves the vault by id when it is set and by label otherwise.
+// lookup resolves the vault by id when it is set and by name otherwise.
 func (d *vaultDataSource) lookup(ctx context.Context, orgS2R string, config *vaultDataSourceModel) (*vaultMatch, error) {
 	if !config.ID.IsNull() && !config.ID.IsUnknown() {
 		id := config.ID.ValueString()
@@ -342,14 +342,14 @@ func (d *vaultDataSource) lookup(ctx context.Context, orgS2R string, config *vau
 			return nil, fmt.Errorf("id %q: describing vault: %w", id, err)
 		}
 
-		return &vaultMatch{VaultID: id, Label: resp.Msg.GetLabel(), Described: resp.Msg}, nil
+		return &vaultMatch{VaultID: id, Name: resp.Msg.GetLabel(), Described: resp.Msg}, nil
 	}
 
-	label := config.Label.ValueString()
+	name := config.Name.ValueString()
 
-	match, err := d.findByLabel(ctx, orgS2R, label)
+	match, err := d.findByName(ctx, orgS2R, name)
 	if err != nil {
-		return nil, fmt.Errorf("label %q: %w", label, err)
+		return nil, fmt.Errorf("name %q: %w", name, err)
 	}
 
 	return match, nil

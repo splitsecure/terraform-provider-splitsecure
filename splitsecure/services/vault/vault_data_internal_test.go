@@ -31,8 +31,8 @@ func TestVaultSchema_Attributes(t *testing.T) {
 		t.Fatalf("schema diagnostics: %v", resp.Diagnostics)
 	}
 
-	if !resp.Schema.Attributes["label"].IsOptional() || !resp.Schema.Attributes["id"].IsOptional() {
-		t.Error("label and id should be Optional")
+	if !resp.Schema.Attributes["name"].IsOptional() || !resp.Schema.Attributes["id"].IsOptional() {
+		t.Error("name and id should be Optional")
 	}
 
 	if !resp.Schema.Attributes["org_s2r"].IsOptional() {
@@ -76,9 +76,9 @@ func TestFindByLabel_PagesUntilMatch(t *testing.T) {
 		},
 	)})
 
-	got, err := (&vaultDataSource{client: c}).findByLabel(context.Background(), "s2r:test:org:acme", "prod")
+	got, err := (&vaultDataSource{client: c}).findByName(context.Background(), "s2r:test:org:acme", "prod")
 	if err != nil {
-		t.Fatalf("findByLabel: %v", err)
+		t.Fatalf("findByName: %v", err)
 	}
 
 	if got.VaultID != "v2" || got.Summary == nil {
@@ -93,7 +93,7 @@ func TestFindByLabel_ErrorsOnNoMatch(t *testing.T) {
 		&vaultcatalogv1.ListVaultsResponse{Vaults: []*vaultcatalogv1.VaultSummary{{VaultId: "v1", Label: "other"}}},
 	)})
 
-	_, err := (&vaultDataSource{client: c}).findByLabel(context.Background(), "s2r:test:org:acme", "prod")
+	_, err := (&vaultDataSource{client: c}).findByName(context.Background(), "s2r:test:org:acme", "prod")
 	if !errors.Is(err, errVaultNotFound) {
 		t.Fatalf("err = %v, want errVaultNotFound", err)
 	}
@@ -110,7 +110,7 @@ func TestFindByLabel_ErrorsOnAmbiguousMatch(t *testing.T) {
 		&vaultcatalogv1.ListVaultsResponse{Vaults: []*vaultcatalogv1.VaultSummary{{VaultId: "v2", Label: "prod"}}},
 	)})
 
-	_, err := (&vaultDataSource{client: c}).findByLabel(context.Background(), "s2r:test:org:acme", "prod")
+	_, err := (&vaultDataSource{client: c}).findByName(context.Background(), "s2r:test:org:acme", "prod")
 	if !errors.Is(err, errVaultAmbig) {
 		t.Fatalf("err = %v, want errVaultAmbig", err)
 	}
@@ -205,9 +205,9 @@ func TestFindByLabel_FallsBackToSharedNodes(t *testing.T) {
 		sharedFolder("v2", "n2", "ci"),
 	)})
 
-	got, err := (&vaultDataSource{client: c}).findByLabel(context.Background(), "s2r:test:org:acme", "prod")
+	got, err := (&vaultDataSource{client: c}).findByName(context.Background(), "s2r:test:org:acme", "prod")
 	if err != nil {
-		t.Fatalf("findByLabel: %v", err)
+		t.Fatalf("findByName: %v", err)
 	}
 
 	if got.VaultID != "v2" || got.Summary != nil || len(got.Shared) != 2 {
@@ -223,9 +223,9 @@ func TestFindByLabel_DedupesVaultInBothLists(t *testing.T) {
 		sharedFolder("v1", "n1", "terraform"),
 	)})
 
-	got, err := (&vaultDataSource{client: c}).findByLabel(context.Background(), "s2r:test:org:acme", "prod")
+	got, err := (&vaultDataSource{client: c}).findByName(context.Background(), "s2r:test:org:acme", "prod")
 	if err != nil {
-		t.Fatalf("findByLabel: %v", err)
+		t.Fatalf("findByName: %v", err)
 	}
 
 	if got.Summary == nil || len(got.Shared) != 1 {
@@ -241,7 +241,7 @@ func TestFindByLabel_ErrorsOnSameLabelAcrossLists(t *testing.T) {
 		sharedFolder("v2", "n1", "terraform"),
 	)})
 
-	_, err := (&vaultDataSource{client: c}).findByLabel(context.Background(), "s2r:test:org:acme", "prod")
+	_, err := (&vaultDataSource{client: c}).findByName(context.Background(), "s2r:test:org:acme", "prod")
 	if !errors.Is(err, errVaultAmbig) {
 		t.Fatalf("err = %v, want errVaultAmbig", err)
 	}
@@ -298,14 +298,14 @@ func TestLookup_ByIDDescribesVault(t *testing.T) {
 		},
 	}})
 
-	config := &vaultDataSourceModel{ID: types.StringValue("v7"), Label: types.StringUnknown()}
+	config := &vaultDataSourceModel{ID: types.StringValue("v7"), Name: types.StringUnknown()}
 
 	got, err := (&vaultDataSource{client: c}).lookup(context.Background(), "s2r:test:org:acme", config)
 	if err != nil {
 		t.Fatalf("lookup: %v", err)
 	}
 
-	if got.VaultID != "v7" || got.Label != "prod" || got.Described == nil || got.Summary != nil {
+	if got.VaultID != "v7" || got.Name != "prod" || got.Described == nil || got.Summary != nil {
 		t.Errorf("match = %+v", got)
 	}
 
@@ -329,18 +329,18 @@ func TestLookup_ByIDErrorsWhenVaultIsUnknown(t *testing.T) {
 	}
 }
 
-func TestLookup_ByLabelWhenIDUnset(t *testing.T) {
+func TestLookup_ByNameWhenIDUnset(t *testing.T) {
 	t.Parallel()
 
 	c := vaultfake.New(t, vaultfake.Handlers{Catalog: catalogWithShared([]*vaultcatalogv1.VaultSummary{{VaultId: "v1", Label: "prod"}})})
 
-	got, err := (&vaultDataSource{client: c}).lookup(context.Background(), "s2r:test:org:acme", &vaultDataSourceModel{Label: types.StringValue("prod"), ID: types.StringNull()})
-	if err != nil || got.VaultID != "v1" || got.Label != "prod" {
+	got, err := (&vaultDataSource{client: c}).lookup(context.Background(), "s2r:test:org:acme", &vaultDataSourceModel{Name: types.StringValue("prod"), ID: types.StringNull()})
+	if err != nil || got.VaultID != "v1" || got.Name != "prod" {
 		t.Fatalf("got %+v, err %v", got, err)
 	}
 }
 
-func TestVaultSchema_RefusesBothOrNeitherOfLabelAndID(t *testing.T) {
+func TestVaultSchema_RefusesBothOrNeitherOfNameAndID(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
@@ -348,19 +348,19 @@ func TestVaultSchema_RefusesBothOrNeitherOfLabelAndID(t *testing.T) {
 	resp := &datasource.SchemaResponse{}
 	NewVaultDataSource().Schema(ctx, datasource.SchemaRequest{}, resp)
 
-	label, ok := resp.Schema.Attributes["label"].(dschema.StringAttribute)
+	nameAttr, ok := resp.Schema.Attributes["name"].(dschema.StringAttribute)
 	if !ok {
-		t.Fatal("label is not a string attribute")
+		t.Fatal("name is not a string attribute")
 	}
 
 	for name, tc := range map[string]struct {
-		label, id types.String
-		wantErr   bool
+		name, id types.String
+		wantErr  bool
 	}{
-		"label only": {types.StringValue("prod"), types.StringNull(), false},
-		"id only":    {types.StringNull(), types.StringValue("v1"), false},
-		"both":       {types.StringValue("prod"), types.StringValue("v1"), true},
-		"neither":    {types.StringNull(), types.StringNull(), true},
+		"name only": {types.StringValue("prod"), types.StringNull(), false},
+		"id only":   {types.StringNull(), types.StringValue("v1"), false},
+		"both":      {types.StringValue("prod"), types.StringValue("v1"), true},
+		"neither":   {types.StringNull(), types.StringNull(), true},
 	} {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
@@ -369,7 +369,7 @@ func TestVaultSchema_RefusesBothOrNeitherOfLabelAndID(t *testing.T) {
 			state := tfsdk.State{Schema: resp.Schema, Raw: raw}
 
 			model := vaultDataSourceModel{
-				ID: tc.id, Label: tc.label, OrgS2R: types.StringNull(), CustodyClass: types.StringNull(), Status: types.StringNull(),
+				ID: tc.id, Name: tc.name, OrgS2R: types.StringNull(), CustodyClass: types.StringNull(), Status: types.StringNull(),
 				TeamIDs: types.ListNull(types.StringType), Folder: types.ListNull(types.StringType), NodeID: types.StringNull(),
 			}
 			if diags := state.Set(ctx, &model); diags.HasError() {
@@ -378,13 +378,13 @@ func TestVaultSchema_RefusesBothOrNeitherOfLabelAndID(t *testing.T) {
 
 			var diags diag.Diagnostics
 
-			for _, v := range label.Validators {
+			for _, v := range nameAttr.Validators {
 				vr := &validator.StringResponse{}
 				v.ValidateString(ctx, validator.StringRequest{
-					Path:           path.Root("label"),
-					PathExpression: path.MatchRoot("label"),
+					Path:           path.Root("name"),
+					PathExpression: path.MatchRoot("name"),
 					Config:         tfsdk.Config{Schema: resp.Schema, Raw: state.Raw},
-					ConfigValue:    tc.label,
+					ConfigValue:    tc.name,
 				}, vr)
 				diags.Append(vr.Diagnostics...)
 			}

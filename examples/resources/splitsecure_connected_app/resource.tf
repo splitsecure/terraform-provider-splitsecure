@@ -9,7 +9,7 @@ variable "aws_saml_provider_arn" {
 }
 
 data "splitsecure_vault" "platform" {
-  label = "platform"
+  name = "platform"
 }
 
 resource "splitsecure_saml2_identity_provider" "aws_console" {

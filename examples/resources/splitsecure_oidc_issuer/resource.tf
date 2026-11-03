@@ -1,5 +1,5 @@
 data "splitsecure_vault" "platform" {
-  label = "platform"
+  name = "platform"
 }
 
 resource "splitsecure_oidc_issuer" "ci" {
