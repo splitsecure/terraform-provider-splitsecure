@@ -20,6 +20,7 @@ A field block sets exactly one source.
 | Fixed duration | `seconds = 3600` |
 | Fixed JSON object | `json = jsonencode({...})` |
 | Text that the requester chooses at each sign-in | `choices = ["..."]`, and optionally `default_value` |
+| List that the requester chooses from at each sign-in | `choices = ["..."]`, and optionally `default_values` |
 | Duration that the requester chooses at each sign-in | a `duration_range` block with `min_seconds`, `max_seconds`, and optionally `default_seconds` |
 | The identity of the requester | `requester = "email"` or `requester = "session_name"`, and optionally `suffix` |
 | A value that SplitSecure derives once at app creation | `derived = "at_creation"` |

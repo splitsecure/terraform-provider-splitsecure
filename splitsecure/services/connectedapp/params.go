@@ -27,7 +27,9 @@ const (
 )
 
 var (
-	errFieldShape    = errors.New("set exactly one of value, values, seconds, duration_range, choices or default_value, requester, derived and json")
+	errFieldShape    = errors.New("set exactly one of value, values, seconds, duration_range, choices with its default, requester, derived and json")
+	errListDefault   = errors.New("a list field chosen at sign-in takes default_values, not default_value")
+	errTextDefaults  = errors.New("a text field chosen at sign-in takes default_value, not default_values")
 	errSuffix        = errors.New("suffix applies only to a requester field")
 	errNoChoices     = errors.New("a field chosen at sign-in needs choices, and the template lists none")
 	errJSONObject    = errors.New("json must hold one JSON object")
@@ -159,7 +161,7 @@ func (fm *fieldModel) field(ctx context.Context, spec *catalog.FieldSpec) (*pb.F
 	case !fm.Seconds.IsNull():
 		return catalog.FixedDuration(name, fm.Seconds.ValueInt64()), nil
 	case fm.modifiable():
-		return fm.modifiableString(ctx, spec)
+		return fm.chosenAtSignIn(ctx, spec)
 	case !fm.Requester.IsNull():
 		return fm.requesterString()
 	case !fm.Derived.IsNull():
@@ -172,7 +174,7 @@ func (fm *fieldModel) field(ctx context.Context, spec *catalog.FieldSpec) (*pb.F
 }
 
 func (fm *fieldModel) modifiable() bool {
-	return !fm.Choices.IsNull() || !fm.DefaultValue.IsNull()
+	return !fm.Choices.IsNull() || !fm.DefaultValue.IsNull() || !fm.DefaultValues.IsNull()
 }
 
 // checkShape refuses a field with no source, with several, or with a suffix that has no requester to hold.
@@ -199,7 +201,36 @@ func (fm *fieldModel) checkShape() error {
 	return nil
 }
 
-func (fm *fieldModel) modifiableString(ctx context.Context, spec *catalog.FieldSpec) (*pb.Field, error) {
+// chosenAtSignIn returns a text or list field each sign-in chooses from choices, by the type the spec gives the field.
+func (fm *fieldModel) chosenAtSignIn(ctx context.Context, spec *catalog.FieldSpec) (*pb.Field, error) {
+	isList := spec != nil && spec.Type == catalog.TypeStringList
+
+	switch {
+	case isList && !fm.DefaultValue.IsNull():
+		return nil, errListDefault
+	case !isList && !fm.DefaultValues.IsNull():
+		return nil, errTextDefaults
+	}
+
+	choices, err := fm.choices(ctx, spec)
+	if err != nil {
+		return nil, err
+	}
+
+	if isList {
+		return fm.modifiableList(ctx, choices)
+	}
+
+	opts := catalog.ModifiableStringOptions{Choices: choices}
+	if !fm.DefaultValue.IsNull() {
+		opts.Default = new(fm.DefaultValue.ValueString())
+	}
+
+	return catalog.ModifiableString(fm.Name.ValueString(), opts), nil
+}
+
+// choices returns the configured choices, else the template's choices for the field.
+func (fm *fieldModel) choices(ctx context.Context, spec *catalog.FieldSpec) ([]string, error) {
 	choices, err := stringElements(ctx, fm.Choices)
 	if err != nil {
 		return nil, err
@@ -213,12 +244,20 @@ func (fm *fieldModel) modifiableString(ctx context.Context, spec *catalog.FieldS
 		return nil, errNoChoices
 	}
 
-	opts := catalog.ModifiableStringOptions{Choices: choices}
-	if !fm.DefaultValue.IsNull() {
-		opts.Default = new(fm.DefaultValue.ValueString())
+	return choices, nil
+}
+
+func (fm *fieldModel) modifiableList(ctx context.Context, choices []string) (*pb.Field, error) {
+	if fm.DefaultValues.IsNull() {
+		return catalog.ModifiableStringList(fm.Name.ValueString(), choices, nil), nil
 	}
 
-	return catalog.ModifiableString(fm.Name.ValueString(), opts), nil
+	defaults, err := stringElements(ctx, fm.DefaultValues)
+	if err != nil {
+		return nil, err
+	}
+
+	return catalog.ModifiableStringList(fm.Name.ValueString(), choices, defaults), nil
 }
 
 func (fm *fieldModel) requesterString() (*pb.Field, error) {

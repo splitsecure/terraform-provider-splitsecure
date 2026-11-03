@@ -303,7 +303,7 @@ resource "aws_iam_role_policy_attachment" "read_only" {
 > **NOTE**: [Write-only arguments](https://developer.hashicorp.com/terraform/language/resources/ephemeral#write-only-arguments) are supported in Terraform 1.11 and later.
 
 - `description` (String) Free-form description. Changing it replaces the resource.
-- `field` (Block List) One field of the template. Set exactly one of value, values, seconds, duration_range, choices or default_value, requester, derived and json. Changing any field replaces the resource. (see [below for nested schema](#nestedblock--field))
+- `field` (Block List) One field of the template. Set exactly one of value, values, seconds, duration_range, choices with its default, requester, derived and json. Changing any field replaces the resource. (see [below for nested schema](#nestedblock--field))
 - `folder` (List of String) Folder path from the vault root to place the connected app in, for example ["terraform", "prod"]. Missing folders are created. Unset places it at the vault root. Changing it replaces the resource.
 - `justification` (String, [Write-only](https://developer.hashicorp.com/terraform/language/resources/ephemeral#write-only-arguments)) Justification shown to approvers when the create needs approval. Write-only and never stored in state.
 - `name_id` (Block List) NameID of a SAML2 app, built from parts. Replaces the template's name_id field wherever the layout places it. Changing it replaces the resource. (see [below for nested schema](#nestedblock--name_id))
@@ -329,8 +329,9 @@ Required:
 
 Optional:
 
-- `choices` (List of String) Text each sign-in chooses from. Defaults to the template's choices for the field.
-- `default_value` (String) Choice a sign-in gets when it chooses none.
+- `choices` (List of String) Values each sign-in chooses from: one for a text field, any of them for a list field. Defaults to the template's choices for the field.
+- `default_value` (String) Choice a sign-in gets when it chooses none, for a text field.
+- `default_values` (List of String) Choices a sign-in gets when it chooses none, for a list field.
 - `derived` (String) Text the enclave derives: at_creation or per_sign_in.
 - `duration_range` (Block List) Duration each sign-in chooses within bounds, in seconds. (see [below for nested schema](#nestedblock--field--duration_range))
 - `json` (String) Fixed JSON object, such as jsonencode({team = "platform"}). Numbers must be integers.

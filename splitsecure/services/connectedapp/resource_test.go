@@ -82,7 +82,8 @@ func newField(t *testing.T, name string, set func(*fieldModel)) fieldModel {
 	f := fieldModel{
 		Name: types.StringValue(name), Key: null, Value: null, Values: types.ListNull(types.StringType),
 		Seconds: types.Int64Null(), DurationRange: list[durationRangeModel](t, durationRangeType(), nil),
-		Choices: types.ListNull(types.StringType), DefaultValue: null, Requester: null, Suffix: null, Derived: null, JSON: null,
+		Choices: types.ListNull(types.StringType), DefaultValue: null, DefaultValues: types.ListNull(types.StringType),
+		Requester: null, Suffix: null, Derived: null, JSON: null,
 	}
 	set(&f)
 
@@ -528,6 +529,108 @@ func TestConnectedAppRefusesBadJSONField(t *testing.T) {
 		if got := validate(t, m); !slices.Equal(got, []string{"Invalid field claims"}) {
 			t.Errorf("json %q: diagnostics = %v", raw, got)
 		}
+	}
+}
+
+// genericOIDCModel is a Generic OIDC app with its required fields and the extra fields given.
+func genericOIDCModel(t *testing.T, extra ...fieldModel) appModel {
+	t.Helper()
+
+	fields := append([]fieldModel{
+		fixed(t, "audience", "https://api.example.com"),
+		fixed(t, "subject", "bot"),
+		newField(t, "lifetime", func(f *fieldModel) { f.Seconds = types.Int64Value(600) }),
+	}, extra...)
+
+	return withOIDC(t, model(t, "oidc/generic", fields...), "aw==")
+}
+
+func TestConnectedAppCreatesListClaimChosenAtSignIn(t *testing.T) {
+	t.Parallel()
+
+	groups := newField(t, "claim_list", func(f *fieldModel) {
+		f.Key = types.StringValue("groups")
+		f.Choices = list(t, types.StringType, []string{"admins", "oncall", "readers"})
+		f.DefaultValues = list(t, types.StringType, []string{"readers"})
+	})
+
+	var created *vaultusev1.CreateConnectedAppRequest
+
+	use := &vaultfake.Use{OnCreateConnectedApp: func(req *vaultusev1.CreateConnectedAppRequest) (*vaultusev1.CreateConnectedAppResponse, error) {
+		created = req
+
+		return &vaultusev1.CreateConnectedAppResponse{Outcome: vaultfake.CreateOutcome(false, "node-1")}, nil
+	}}
+	record := &pb.ConnectedAppParams{Template: "oidc/generic", Title: "Generic OIDC", App: &pb.ConnectedAppParams_Oidc{Oidc: &pb.OIDCApp{}}}
+	r := &appResource{client: newClient(t, use, &vaultfake.Browse{OnGetRecord: recordHandler(t, record)})}
+
+	_, err := create(t, r, genericOIDCModel(t, groups))
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+
+	want, err := catalog.Build("oidc/generic", catalog.Binding{OIDCKeyID: []byte("k")},
+		[]*pb.Field{
+			catalog.FixedString("audience", "https://api.example.com"),
+			catalog.FixedString("subject", "bot"),
+			catalog.FixedDuration("lifetime", 600),
+		},
+		[]catalog.Instance{{Key: "groups", Field: catalog.ModifiableStringList("claim_list", []string{"admins", "oncall", "readers"}, []string{"readers"})}})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	assertProtoEqual(t, created.GetBase().GetApp(), want)
+}
+
+func TestConnectedAppRefusesDefaultsOfTheOtherType(t *testing.T) {
+	t.Parallel()
+
+	tests := map[string]struct {
+		field   fieldModel
+		summary string
+		want    error
+	}{
+		"default_value on a list field": {
+			field: newField(t, "claim_list", func(f *fieldModel) {
+				f.Key = types.StringValue("groups")
+				f.Choices = list(t, types.StringType, []string{"admins"})
+				f.DefaultValue = types.StringValue("admins")
+			}),
+			summary: "Invalid field claim_list",
+			want:    errListDefault,
+		},
+		"default_values on a text field": {
+			field: newField(t, "claim", func(f *fieldModel) {
+				f.Key = types.StringValue("team")
+				f.Choices = list(t, types.StringType, []string{"platform"})
+				f.DefaultValues = list(t, types.StringType, []string{"platform"})
+			}),
+			summary: "Invalid field claim",
+			want:    errTextDefaults,
+		},
+	}
+
+	tmpl, err := catalog.Lookup("oidc/generic")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			if got := validate(t, genericOIDCModel(t, tt.field)); !slices.Equal(got, []string{tt.summary}) {
+				t.Errorf("diagnostics = %v, want [%s]", got, tt.summary)
+			}
+
+			spec, _ := tmpl.Spec(tt.field.Name.ValueString())
+
+			_, err := tt.field.field(context.Background(), spec)
+			if !errors.Is(err, tt.want) {
+				t.Errorf("field() error = %v, want %v", err, tt.want)
+			}
+		})
 	}
 }
 

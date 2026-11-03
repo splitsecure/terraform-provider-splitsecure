@@ -89,6 +89,7 @@ type fieldModel struct {
 	DurationRange types.List   `tfsdk:"duration_range"`
 	Choices       types.List   `tfsdk:"choices"`
 	DefaultValue  types.String `tfsdk:"default_value"`
+	DefaultValues types.List   `tfsdk:"default_values"`
 	Requester     types.String `tfsdk:"requester"`
 	Suffix        types.String `tfsdk:"suffix"`
 	Derived       types.String `tfsdk:"derived"`
@@ -125,7 +126,7 @@ func fieldType() types.ObjectType {
 	return types.ObjectType{AttrTypes: map[string]attr.Type{
 		"name": types.StringType, "key": types.StringType, "value": types.StringType, "values": stringList,
 		"seconds": types.Int64Type, "duration_range": types.ListType{ElemType: durationRangeType()},
-		"choices": stringList, "default_value": types.StringType, "requester": types.StringType, "suffix": types.StringType,
+		"choices": stringList, "default_value": types.StringType, "default_values": stringList, "requester": types.StringType, "suffix": types.StringType,
 		"derived": types.StringType, "json": types.StringType,
 	}}
 }
@@ -243,7 +244,7 @@ func nameIDBlock() schema.ListNestedBlock {
 }
 
 func fieldBlock() schema.ListNestedBlock {
-	sourced := "Set exactly one of value, values, seconds, duration_range, choices or default_value, requester, derived and json."
+	sourced := "Set exactly one of value, values, seconds, duration_range, choices with its default, requester, derived and json."
 
 	return schema.ListNestedBlock{
 		Description:   "One field of the template. " + sourced + " Changing any field replaces the resource.",
@@ -261,9 +262,14 @@ func fieldBlock() schema.ListNestedBlock {
 				"choices": schema.ListAttribute{
 					ElementType: types.StringType,
 					Optional:    true,
-					Description: "Text each sign-in chooses from. Defaults to the template's choices for the field.",
+					Description: "Values each sign-in chooses from: one for a text field, any of them for a list field. Defaults to the template's choices for the field.",
 				},
-				"default_value": schema.StringAttribute{Optional: true, Description: "Choice a sign-in gets when it chooses none."},
+				"default_value": schema.StringAttribute{Optional: true, Description: "Choice a sign-in gets when it chooses none, for a text field."},
+				"default_values": schema.ListAttribute{
+					ElementType: types.StringType,
+					Optional:    true,
+					Description: "Choices a sign-in gets when it chooses none, for a list field.",
+				},
 				"requester": schema.StringAttribute{
 					Optional:    true,
 					Description: "Text filled from the requester: email or session_name.",
