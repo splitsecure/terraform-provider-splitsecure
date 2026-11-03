@@ -98,16 +98,15 @@ func issuerPlan(ctx context.Context, t *testing.T) issuerModel {
 func issuerRecordHandler(t *testing.T) func(*vaultbrowsev1.GetRecordRequest) (*vaultbrowsev1.GetRecordResponse, error) {
 	t.Helper()
 
+	// As a real record: published keys carry a JWK thumbprint kid, in an order of their own.
 	state := &wifv2.WorkloadIdentityAuthorityState{
 		Issuer:      "https://issuer.example.com/a1",
 		JwksUri:     "https://issuer.example.com/a1/jwks",
 		AuthorityId: "a1",
 		NotBefore:   timestamppb.New(time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC)),
 		Keys: []*wifv2.PublishedKey{
-			{Kid: "k1", PublicKey: &keysv1.SerializedKey{Data: []byte("pub1"), Spec: &keysv1.Spec{Union: &keysv1.Spec_Signature{
-				Signature: &keysv1.SignatureSpec{Union: &keysv1.SignatureSpec_Ecdsa{Ecdsa: keysv1.ECDSA_ECDSA_NIST_P256}},
-			}}}},
-			{Kid: "k2", PublicKey: &keysv1.SerializedKey{Data: []byte("pub2")}},
+			{Kid: "thumb-eddsa", PublicKey: &keysv1.SerializedKey{Data: []byte("pub-eddsa"), Spec: signatureSpec(t, vaultapi.AlgEdDSA)}},
+			{Kid: "thumb-es256", PublicKey: &keysv1.SerializedKey{Data: []byte("pub-es256"), Spec: signatureSpec(t, vaultapi.AlgES256)}},
 		},
 	}
 
@@ -121,8 +120,40 @@ func issuerRecordHandler(t *testing.T) func(*vaultbrowsev1.GetRecordRequest) (*v
 			NotificationPolicy: teamresourcev1.NotificationPolicy_NOTIFICATION_POLICY_NOTIFY_EVERYONE,
 		}
 
-		return vaultfake.Record(t, vaultapi.KindWIFAuthority, attrs, state, &issuancev1.MaterialBinding{Name: "k1", KeyId: []byte("bound-1")}), nil
+		return vaultfake.Record(t, vaultapi.KindWIFAuthority, attrs, state, issuerMaterials(t)...), nil
 	}
+}
+
+// issuerMaterials are the record's signing-key bindings, each named by its JWS alg; the ML-DSA-65 one has no published key.
+func issuerMaterials(t *testing.T) []*issuancev1.MaterialBinding {
+	t.Helper()
+
+	binding := func(alg, publicKey string, keyID ...byte) *issuancev1.MaterialBinding {
+		return &issuancev1.MaterialBinding{
+			Name:  alg,
+			KeyId: keyID,
+			Form: &issuancev1.MaterialForm{Form: &issuancev1.MaterialForm_PrivateKey{PrivateKey: &issuancev1.PrivateKeyMaterial{
+				Spec: signatureSpec(t, alg), PublicKey: []byte(publicKey),
+			}}},
+		}
+	}
+
+	return []*issuancev1.MaterialBinding{
+		binding(vaultapi.AlgES256, "pub-es256", 1, 2, 3, 4),
+		binding(vaultapi.AlgEdDSA, "pub-eddsa", 10, 11, 12, 13),
+		binding(vaultapi.AlgMLDSA65, "pub-mldsa65", 5, 6, 7, 8),
+	}
+}
+
+func signatureSpec(t *testing.T, alg string) *keysv1.Spec {
+	t.Helper()
+
+	sig, err := vaultapi.SignatureSpecFromAlg(alg)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	return &keysv1.Spec{Union: &keysv1.Spec_Signature{Signature: sig}}
 }
 
 func issuerUse(viaTicket bool, created **vaultusev1.CreateWIFAuthorityRequest, deleted **vaultusev1.DeleteRequest) *vaultfake.Use {
@@ -262,22 +293,44 @@ func assertIssuerState(t *testing.T, got *issuerModel) {
 	}
 }
 
-// assertIssuerKeys checks that k1 carries its bound key id and k2 falls back to the published key bytes.
+// assertIssuerKeys checks one key per binding, in binding order, each with its bound key id and the kid of the published key
+// holding its public key, or a null kid when none does.
 func assertIssuerKeys(ctx context.Context, t *testing.T, got *issuerModel) {
 	t.Helper()
 
 	var keys []issuerKeyModel
 
-	if diags := got.Keys.ElementsAs(ctx, &keys, false); diags.HasError() || len(keys) != 2 {
+	if diags := got.Keys.ElementsAs(ctx, &keys, false); diags.HasError() {
 		t.Fatalf("keys = %v, diags = %v", keys, diags)
 	}
 
-	if keys[0].Kid.ValueString() != "k1" || keys[0].Alg.ValueString() != vaultapi.AlgES256 || keys[0].KeyID.ValueString() != "Ym91bmQtMQ==" {
-		t.Errorf("key 0 = %+v", keys[0])
+	want := []issuerKeyModel{
+		{Kid: types.StringValue("thumb-es256"), Alg: types.StringValue(vaultapi.AlgES256), KeyID: types.StringValue("AQIDBA==")},
+		{Kid: types.StringValue("thumb-eddsa"), Alg: types.StringValue(vaultapi.AlgEdDSA), KeyID: types.StringValue("CgsMDQ==")},
+		{Kid: types.StringNull(), Alg: types.StringValue(vaultapi.AlgMLDSA65), KeyID: types.StringValue("BQYHCA==")},
 	}
 
-	if keys[1].KeyID.ValueString() != "cHViMg==" {
-		t.Errorf("key 1 = %+v", keys[1])
+	if !slices.EqualFunc(keys, want, func(a, b issuerKeyModel) bool {
+		return a.Kid.Equal(b.Kid) && a.Alg.Equal(b.Alg) && a.KeyID.Equal(b.KeyID)
+	}) {
+		t.Errorf("keys = %+v, want %+v", keys, want)
+	}
+}
+
+func TestKeyModelsTakesAlgFromThePublishedKeyWhenTheBindingIsUnnamed(t *testing.T) {
+	t.Parallel()
+
+	authority := &wifv2.WorkloadIdentityAuthorityState{Keys: []*wifv2.PublishedKey{
+		{Kid: "thumb-es384", PublicKey: &keysv1.SerializedKey{Data: []byte("pub-es384"), Spec: signatureSpec(t, vaultapi.AlgES384)}},
+	}}
+	material := &issuancev1.MaterialBinding{KeyId: []byte{9, 9, 9, 9}, Form: &issuancev1.MaterialForm{Form: &issuancev1.MaterialForm_PrivateKey{
+		PrivateKey: &issuancev1.PrivateKeyMaterial{PublicKey: []byte("pub-es384")},
+	}}}
+
+	keys := keyModels(authority, &vaultapi.Record{Materials: []*issuancev1.MaterialBinding{material}})
+
+	if len(keys) != 1 || keys[0].Alg.ValueString() != vaultapi.AlgES384 || keys[0].Kid.ValueString() != "thumb-es384" {
+		t.Errorf("keys = %+v", keys)
 	}
 }
 

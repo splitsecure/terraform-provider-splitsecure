@@ -2,6 +2,7 @@
 package oidc
 
 import (
+	"bytes"
 	"context"
 	"encoding/base64"
 	"errors"
@@ -128,11 +129,11 @@ func (r *issuerResource) Schema(_ context.Context, _ resource.SchemaRequest, res
 
 	attrs["keys"] = schema.ListNestedAttribute{
 		Computed:      true,
-		Description:   "Keys the issuer publishes.",
+		Description:   "Signing keys bound to the issuer, one per algorithm. A connected app names one by key_id.",
 		PlanModifiers: []planmodifier.List{listplanmodifier.UseStateForUnknown()},
 		NestedObject: schema.NestedAttributeObject{
 			Attributes: map[string]schema.Attribute{
-				"kid":    schema.StringAttribute{Computed: true, Description: "Key id in the JWKS."},
+				"kid":    schema.StringAttribute{Computed: true, Description: "Key id in the JWKS, the JWK thumbprint. Null when the issuer publishes no key for the binding."},
 				"alg":    schema.StringAttribute{Computed: true, Description: "Signing algorithm of the key."},
 				"key_id": schema.StringAttribute{Computed: true, Description: "Base64-encoded vault key id."},
 			},
@@ -356,27 +357,45 @@ func formatTimestamp(ts *timestamppb.Timestamp) types.String {
 	return types.StringValue(ts.AsTime().UTC().Format(time.RFC3339))
 }
 
-// keyModels pairs each published key with the vault key id bound to the record, falling back to the public key bytes.
+// keyModels returns one key per signing key bound to the record, the key ids a connected app may name. A bound key is named
+// by its JWS alg and carries the public key its published key holds, so the published key matches on those bytes.
 func keyModels(authority *wifv2.WorkloadIdentityAuthorityState, rec *vaultapi.Record) []issuerKeyModel {
-	boundKeyIDs := make(map[string][]byte, len(rec.Materials))
+	keys := make([]issuerKeyModel, 0, len(rec.Materials))
+
 	for _, material := range rec.Materials {
-		boundKeyIDs[material.GetName()] = material.GetKeyId()
-	}
+		published := publishedKeyFor(authority, material.GetForm().GetPrivateKey().GetPublicKey())
 
-	keys := make([]issuerKeyModel, 0, len(authority.GetKeys()))
+		alg := material.GetName()
+		if alg == "" {
+			alg = vaultapi.AlgFromSignatureSpec(published.GetPublicKey().GetSpec().GetSignature())
+		}
 
-	for _, k := range authority.GetKeys() {
-		keyID := boundKeyIDs[k.GetKid()]
-		if len(keyID) == 0 {
-			keyID = k.GetPublicKey().GetData()
+		kid := types.StringNull()
+		if published != nil {
+			kid = types.StringValue(published.GetKid())
 		}
 
 		keys = append(keys, issuerKeyModel{
-			Kid:   types.StringValue(k.GetKid()),
-			Alg:   types.StringValue(vaultapi.AlgFromSignatureSpec(k.GetPublicKey().GetSpec().GetSignature())),
-			KeyID: types.StringValue(base64.StdEncoding.EncodeToString(keyID)),
+			Kid:   kid,
+			Alg:   types.StringValue(alg),
+			KeyID: types.StringValue(base64.StdEncoding.EncodeToString(material.GetKeyId())),
 		})
 	}
 
 	return keys
+}
+
+// publishedKeyFor returns the published key holding publicKey, or nil.
+func publishedKeyFor(authority *wifv2.WorkloadIdentityAuthorityState, publicKey []byte) *wifv2.PublishedKey {
+	if len(publicKey) == 0 {
+		return nil
+	}
+
+	for _, k := range authority.GetKeys() {
+		if bytes.Equal(k.GetPublicKey().GetData(), publicKey) {
+			return k
+		}
+	}
+
+	return nil
 }

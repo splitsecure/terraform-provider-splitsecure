@@ -62,7 +62,7 @@ output "ci_issuer" {
 - `id` (String) Record id in the vault. Also the import id as vault_id/id.
 - `issuer` (String) Issuer URL, the iss claim of minted tokens.
 - `jwks_url` (String) URL of the JSON Web Key Set that verifies minted tokens.
-- `keys` (Attributes List) Keys the issuer publishes. (see [below for nested schema](#nestedatt--keys))
+- `keys` (Attributes List) Signing keys bound to the issuer, one per algorithm. A connected app names one by key_id. (see [below for nested schema](#nestedatt--keys))
 - `not_after` (String) End of the issuer validity, as an RFC 3339 timestamp.
 - `not_before` (String) Start of the issuer validity, as an RFC 3339 timestamp.
 
@@ -73,4 +73,4 @@ Read-Only:
 
 - `alg` (String) Signing algorithm of the key.
 - `key_id` (String) Base64-encoded vault key id.
-- `kid` (String) Key id in the JWKS.
+- `kid` (String) Key id in the JWKS, the JWK thumbprint. Null when the issuer publishes no key for the binding.
