@@ -28,6 +28,7 @@ type Use struct {
 
 	OnCreateSAML2IDP     func(*vaultusev1.CreateSAML2IDPRequest) (*vaultusev1.CreateSAML2IDPResponse, error)
 	OnCreateWIFAuthority func(*vaultusev1.CreateWIFAuthorityRequest) (*vaultusev1.CreateWIFAuthorityResponse, error)
+	OnCreateConnectedApp func(*vaultusev1.CreateConnectedAppRequest) (*vaultusev1.CreateConnectedAppResponse, error)
 	OnDelete             func(*vaultusev1.DeleteRequest) (*vaultusev1.DeleteResponse, error)
 	OnPollTicket         func(*vaultusev1.PollTicketRequest) (*vaultusev1.PollTicketResponse, error)
 }
@@ -53,6 +54,20 @@ func (u *Use) CreateWIFAuthority(ctx context.Context, req *connect.Request[vault
 	}
 
 	resp, err := u.OnCreateWIFAuthority(req.Msg)
+	if err != nil {
+		return nil, err
+	}
+
+	return connect.NewResponse(resp), nil
+}
+
+// CreateConnectedApp implements vaultusev1connect.VaultUseServiceHandler.
+func (u *Use) CreateConnectedApp(ctx context.Context, req *connect.Request[vaultusev1.CreateConnectedAppRequest]) (*connect.Response[vaultusev1.CreateConnectedAppResponse], error) {
+	if u.OnCreateConnectedApp == nil {
+		return u.UnimplementedVaultUseServiceHandler.CreateConnectedApp(ctx, req)
+	}
+
+	resp, err := u.OnCreateConnectedApp(req.Msg)
 	if err != nil {
 		return nil, err
 	}
@@ -93,6 +108,7 @@ type Browse struct {
 	vaultbrowsev1connect.UnimplementedVaultBrowseServiceHandler
 
 	OnGetRecord func(*vaultbrowsev1.GetRecordRequest) (*vaultbrowsev1.GetRecordResponse, error)
+	OnListNodes func(*vaultbrowsev1.ListNodesRequest) (*vaultbrowsev1.ListNodesResponse, error)
 }
 
 // GetRecord implements vaultbrowsev1connect.VaultBrowseServiceHandler.
@@ -113,7 +129,8 @@ func (b *Browse) GetRecord(ctx context.Context, req *connect.Request[vaultbrowse
 type Catalog struct {
 	vaultcatalogv1connect.UnimplementedVaultCatalogServiceHandler
 
-	OnListVaults func(*vaultcatalogv1.ListVaultsRequest) (*vaultcatalogv1.ListVaultsResponse, error)
+	OnListVaults       func(*vaultcatalogv1.ListVaultsRequest) (*vaultcatalogv1.ListVaultsResponse, error)
+	OnListSharedWithMe func(*vaultcatalogv1.ListSharedWithMeRequest) (*vaultcatalogv1.ListSharedWithMeResponse, error)
 }
 
 // ListVaults implements vaultcatalogv1connect.VaultCatalogServiceHandler.
@@ -219,4 +236,32 @@ func ResolvedTicket(forDelete bool, secretID string) *vaultusev1.PollTicketRespo
 	return &vaultusev1.PollTicketResponse{Outcome: &vaultusev1.TicketOutcome{
 		Outcome: &vaultusev1.TicketOutcome_CreateResult{CreateResult: &vaultusev1.CreateResult{SecretId: secretID}},
 	}}
+}
+
+// ListNodes implements vaultbrowsev1connect.VaultBrowseServiceHandler.
+func (b *Browse) ListNodes(ctx context.Context, req *connect.Request[vaultbrowsev1.ListNodesRequest]) (*connect.Response[vaultbrowsev1.ListNodesResponse], error) {
+	if b.OnListNodes == nil {
+		return b.UnimplementedVaultBrowseServiceHandler.ListNodes(ctx, req)
+	}
+
+	resp, err := b.OnListNodes(req.Msg)
+	if err != nil {
+		return nil, err
+	}
+
+	return connect.NewResponse(resp), nil
+}
+
+// ListSharedWithMe implements vaultcatalogv1connect.VaultCatalogServiceHandler.
+func (c *Catalog) ListSharedWithMe(ctx context.Context, req *connect.Request[vaultcatalogv1.ListSharedWithMeRequest]) (*connect.Response[vaultcatalogv1.ListSharedWithMeResponse], error) {
+	if c.OnListSharedWithMe == nil {
+		return c.UnimplementedVaultCatalogServiceHandler.ListSharedWithMe(ctx, req)
+	}
+
+	resp, err := c.OnListSharedWithMe(req.Msg)
+	if err != nil {
+		return nil, err
+	}
+
+	return connect.NewResponse(resp), nil
 }
