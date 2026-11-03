@@ -107,8 +107,9 @@ func (u *Use) PollTicket(ctx context.Context, req *connect.Request[vaultusev1.Po
 type Browse struct {
 	vaultbrowsev1connect.UnimplementedVaultBrowseServiceHandler
 
-	OnGetRecord func(*vaultbrowsev1.GetRecordRequest) (*vaultbrowsev1.GetRecordResponse, error)
-	OnListNodes func(*vaultbrowsev1.ListNodesRequest) (*vaultbrowsev1.ListNodesResponse, error)
+	OnGetRecord     func(*vaultbrowsev1.GetRecordRequest) (*vaultbrowsev1.GetRecordResponse, error)
+	OnListNodes     func(*vaultbrowsev1.ListNodesRequest) (*vaultbrowsev1.ListNodesResponse, error)
+	OnDescribeVault func(*vaultbrowsev1.DescribeVaultRequest) (*vaultbrowsev1.DescribeVaultResponse, error)
 }
 
 // GetRecord implements vaultbrowsev1connect.VaultBrowseServiceHandler.
@@ -259,6 +260,20 @@ func (c *Catalog) ListSharedWithMe(ctx context.Context, req *connect.Request[vau
 	}
 
 	resp, err := c.OnListSharedWithMe(req.Msg)
+	if err != nil {
+		return nil, err
+	}
+
+	return connect.NewResponse(resp), nil
+}
+
+// DescribeVault implements vaultbrowsev1connect.VaultBrowseServiceHandler.
+func (b *Browse) DescribeVault(ctx context.Context, req *connect.Request[vaultbrowsev1.DescribeVaultRequest]) (*connect.Response[vaultbrowsev1.DescribeVaultResponse], error) {
+	if b.OnDescribeVault == nil {
+		return b.UnimplementedVaultBrowseServiceHandler.DescribeVault(ctx, req)
+	}
+
+	resp, err := b.OnDescribeVault(req.Msg)
 	if err != nil {
 		return nil, err
 	}

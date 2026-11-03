@@ -7,6 +7,13 @@ import (
 
 	"connectrpc.com/connect"
 	"github.com/hashicorp/terraform-plugin-framework/datasource"
+	dschema "github.com/hashicorp/terraform-plugin-framework/datasource/schema"
+	"github.com/hashicorp/terraform-plugin-framework/diag"
+	"github.com/hashicorp/terraform-plugin-framework/path"
+	"github.com/hashicorp/terraform-plugin-framework/schema/validator"
+	"github.com/hashicorp/terraform-plugin-framework/tfsdk"
+	"github.com/hashicorp/terraform-plugin-framework/types"
+	"github.com/hashicorp/terraform-plugin-go/tftypes"
 
 	vaultbrowsev1 "github.com/splitsecure/apis/gen/go/proto/splitsecure/vaultbrowse/v1"
 	vaultcatalogv1 "github.com/splitsecure/apis/gen/go/proto/splitsecure/vaultcatalog/v1"
@@ -24,8 +31,8 @@ func TestVaultSchema_Attributes(t *testing.T) {
 		t.Fatalf("schema diagnostics: %v", resp.Diagnostics)
 	}
 
-	if !resp.Schema.Attributes["label"].IsRequired() {
-		t.Error("label should be Required")
+	if !resp.Schema.Attributes["label"].IsOptional() || !resp.Schema.Attributes["id"].IsOptional() {
+		t.Error("label and id should be Optional")
 	}
 
 	if !resp.Schema.Attributes["org_s2r"].IsOptional() {
@@ -270,5 +277,121 @@ func TestResolveFolderIn_ListsNodesOtherwise(t *testing.T) {
 
 	if got != "node-9" {
 		t.Errorf("node id = %q, want node-9", got)
+	}
+}
+
+func TestLookup_ByIDDescribesVault(t *testing.T) {
+	t.Parallel()
+
+	c := vaultfake.New(t, vaultfake.Handlers{Browse: &vaultfake.Browse{
+		OnDescribeVault: func(req *vaultbrowsev1.DescribeVaultRequest) (*vaultbrowsev1.DescribeVaultResponse, error) {
+			if req.GetBase().GetVaultId() != "v7" {
+				t.Errorf("vault id = %q", req.GetBase().GetVaultId())
+			}
+
+			return &vaultbrowsev1.DescribeVaultResponse{
+				VaultId:      "v7",
+				Label:        "prod",
+				CustodyClass: vaulttypesv1.CustodyClass_CUSTODY_CLASS_ONLINE,
+				Status:       vaulttypesv1.VaultStatus_VAULT_STATUS_ACTIVE,
+			}, nil
+		},
+	}})
+
+	config := &vaultDataSourceModel{ID: types.StringValue("v7"), Label: types.StringUnknown()}
+
+	got, err := (&vaultDataSource{client: c}).lookup(context.Background(), "s2r:test:org:acme", config)
+	if err != nil {
+		t.Fatalf("lookup: %v", err)
+	}
+
+	if got.VaultID != "v7" || got.Label != "prod" || got.Described == nil || got.Summary != nil {
+		t.Errorf("match = %+v", got)
+	}
+
+	if enumName(got.Described.GetCustodyClass().String(), "CUSTODY_CLASS_") != "online" {
+		t.Errorf("custody class = %v", got.Described.GetCustodyClass())
+	}
+}
+
+func TestLookup_ByIDErrorsWhenVaultIsUnknown(t *testing.T) {
+	t.Parallel()
+
+	c := vaultfake.New(t, vaultfake.Handlers{Browse: &vaultfake.Browse{
+		OnDescribeVault: func(*vaultbrowsev1.DescribeVaultRequest) (*vaultbrowsev1.DescribeVaultResponse, error) {
+			return nil, connect.NewError(connect.CodeNotFound, errVaultNotFound)
+		},
+	}})
+
+	_, err := (&vaultDataSource{client: c}).lookup(context.Background(), "s2r:test:org:acme", &vaultDataSourceModel{ID: types.StringValue("v7")})
+	if err == nil {
+		t.Fatal("expected an error")
+	}
+}
+
+func TestLookup_ByLabelWhenIDUnset(t *testing.T) {
+	t.Parallel()
+
+	c := vaultfake.New(t, vaultfake.Handlers{Catalog: catalogWithShared([]*vaultcatalogv1.VaultSummary{{VaultId: "v1", Label: "prod"}})})
+
+	got, err := (&vaultDataSource{client: c}).lookup(context.Background(), "s2r:test:org:acme", &vaultDataSourceModel{Label: types.StringValue("prod"), ID: types.StringNull()})
+	if err != nil || got.VaultID != "v1" || got.Label != "prod" {
+		t.Fatalf("got %+v, err %v", got, err)
+	}
+}
+
+func TestVaultSchema_RefusesBothOrNeitherOfLabelAndID(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+
+	resp := &datasource.SchemaResponse{}
+	NewVaultDataSource().Schema(ctx, datasource.SchemaRequest{}, resp)
+
+	label, ok := resp.Schema.Attributes["label"].(dschema.StringAttribute)
+	if !ok {
+		t.Fatal("label is not a string attribute")
+	}
+
+	for name, tc := range map[string]struct {
+		label, id types.String
+		wantErr   bool
+	}{
+		"label only": {types.StringValue("prod"), types.StringNull(), false},
+		"id only":    {types.StringNull(), types.StringValue("v1"), false},
+		"both":       {types.StringValue("prod"), types.StringValue("v1"), true},
+		"neither":    {types.StringNull(), types.StringNull(), true},
+	} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			raw := tftypes.NewValue(resp.Schema.Type().TerraformType(ctx), nil)
+			state := tfsdk.State{Schema: resp.Schema, Raw: raw}
+
+			model := vaultDataSourceModel{
+				ID: tc.id, Label: tc.label, OrgS2R: types.StringNull(), CustodyClass: types.StringNull(), Status: types.StringNull(),
+				TeamIDs: types.ListNull(types.StringType), Folder: types.ListNull(types.StringType), NodeID: types.StringNull(),
+			}
+			if diags := state.Set(ctx, &model); diags.HasError() {
+				t.Fatalf("building config: %v", diags)
+			}
+
+			var diags diag.Diagnostics
+
+			for _, v := range label.Validators {
+				vr := &validator.StringResponse{}
+				v.ValidateString(ctx, validator.StringRequest{
+					Path:           path.Root("label"),
+					PathExpression: path.MatchRoot("label"),
+					Config:         tfsdk.Config{Schema: resp.Schema, Raw: state.Raw},
+					ConfigValue:    tc.label,
+				}, vr)
+				diags.Append(vr.Diagnostics...)
+			}
+
+			if diags.HasError() != tc.wantErr {
+				t.Errorf("errors = %v, want error %v", diags, tc.wantErr)
+			}
+		})
 	}
 }

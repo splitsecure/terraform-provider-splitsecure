@@ -14,6 +14,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/datasource"
 	"github.com/hashicorp/terraform-plugin-framework/datasource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
+	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/schema/validator"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 
@@ -64,12 +65,16 @@ func (d *vaultDataSource) Configure(_ context.Context, req datasource.ConfigureR
 
 func (d *vaultDataSource) Schema(_ context.Context, _ datasource.SchemaRequest, resp *datasource.SchemaResponse) {
 	resp.Schema = schema.Schema{
-		Description: "Resolves a vault by its label. The lookup errors when no vault or more than one vault has the label.",
+		Description: "Resolves a vault by label or by id. Set exactly one of them. A label lookup errors when no vault or more than one vault has the label.",
 		Attributes: map[string]schema.Attribute{
 			"label": schema.StringAttribute{
-				Required:    true,
-				Description: "Label of the vault to resolve.",
-				Validators:  []validator.String{stringvalidator.LengthAtLeast(1)},
+				Optional:    true,
+				Computed:    true,
+				Description: "Label of the vault to resolve. Set exactly one of label and id.",
+				Validators: []validator.String{
+					stringvalidator.LengthAtLeast(1),
+					stringvalidator.ExactlyOneOf(path.MatchRoot("id")),
+				},
 			},
 			"org_s2r": schema.StringAttribute{
 				Optional:    true,
@@ -77,8 +82,10 @@ func (d *vaultDataSource) Schema(_ context.Context, _ datasource.SchemaRequest, 
 				Description: "Org s2r URI to search. Defaults to the provider's org_s2r.",
 			},
 			"id": schema.StringAttribute{
+				Optional:    true,
 				Computed:    true,
-				Description: "Vault id. Use it as the vault_id of vault resources.",
+				Description: "Vault id. Use it as the vault_id of vault resources. Set exactly one of label and id.",
+				Validators:  []validator.String{stringvalidator.LengthAtLeast(1)},
 			},
 			"custody_class": schema.StringAttribute{
 				Computed:    true,
@@ -109,9 +116,11 @@ func (d *vaultDataSource) Schema(_ context.Context, _ datasource.SchemaRequest, 
 
 // vaultMatch is a vault found by label. Summary is nil when the vault is only reachable through shared nodes.
 type vaultMatch struct {
-	VaultID string
-	Summary *vaultcatalogv1.VaultSummary
-	Shared  []*vaultcatalogv1.SharedNode
+	VaultID   string
+	Label     string
+	Summary   *vaultcatalogv1.VaultSummary
+	Described *vaultbrowsev1.DescribeVaultResponse
+	Shared    []*vaultcatalogv1.SharedNode
 }
 
 func (d *vaultDataSource) Read(ctx context.Context, req datasource.ReadRequest, resp *datasource.ReadResponse) {
@@ -127,25 +136,22 @@ func (d *vaultDataSource) Read(ctx context.Context, req datasource.ReadRequest, 
 		orgS2R = d.client.OrgS2R
 	}
 
-	label := config.Label.ValueString()
-
-	match, err := d.findByLabel(ctx, orgS2R, label)
+	match, err := d.lookup(ctx, orgS2R, &config)
 	if err != nil {
-		resp.Diagnostics.AddError("Resolving vault", fmt.Sprintf("label %q: %s", label, err))
+		resp.Diagnostics.AddError("Resolving vault", err.Error())
 
 		return
 	}
 
 	config.ID = types.StringValue(match.VaultID)
+	config.Label = types.StringValue(match.Label)
 	config.OrgS2R = types.StringValue(orgS2R)
 	config.CustodyClass = types.StringNull()
 	config.Status = types.StringNull()
 	config.TeamIDs = types.ListNull(types.StringType)
 	config.NodeID = types.StringNull()
 
-	if match.Summary != nil {
-		resp.Diagnostics.Append(applySummary(ctx, &config, match.Summary)...)
-	}
+	resp.Diagnostics.Append(applyMatch(ctx, &config, match)...)
 
 	if !config.Folder.IsNull() && !config.Folder.IsUnknown() {
 		var segments []string
@@ -179,7 +185,7 @@ func (d *vaultDataSource) findByLabel(ctx context.Context, orgS2R, label string)
 
 	err := d.eachVault(ctx, orgS2R, func(v *vaultcatalogv1.VaultSummary) {
 		if v.GetLabel() == label {
-			found[v.GetVaultId()] = &vaultMatch{VaultID: v.GetVaultId(), Summary: v}
+			found[v.GetVaultId()] = &vaultMatch{VaultID: v.GetVaultId(), Label: v.GetLabel(), Summary: v}
 		}
 	})
 	if err != nil {
@@ -193,7 +199,7 @@ func (d *vaultDataSource) findByLabel(ctx context.Context, orgS2R, label string)
 
 		m, ok := found[n.GetVaultId()]
 		if !ok {
-			m = &vaultMatch{VaultID: n.GetVaultId()}
+			m = &vaultMatch{VaultID: n.GetVaultId(), Label: n.GetVaultLabel()}
 			found[n.GetVaultId()] = m
 		}
 
@@ -305,8 +311,8 @@ func (d *vaultDataSource) resolveFolder(ctx context.Context, vaultID string, seg
 }
 
 func applySummary(ctx context.Context, m *vaultDataSourceModel, v *vaultcatalogv1.VaultSummary) diag.Diagnostics {
-	m.CustodyClass = types.StringValue(strings.ToLower(strings.TrimPrefix(v.GetCustodyClass().String(), "CUSTODY_CLASS_")))
-	m.Status = types.StringValue(strings.ToLower(strings.TrimPrefix(v.GetStatus().String(), "VAULT_STATUS_")))
+	m.CustodyClass = types.StringValue(enumName(v.GetCustodyClass().String(), "CUSTODY_CLASS_"))
+	m.Status = types.StringValue(enumName(v.GetStatus().String(), "VAULT_STATUS_"))
 
 	teamIDs := make([]string, 0, len(v.GetTeamIds()))
 	for _, id := range v.GetTeamIds() {
@@ -318,4 +324,47 @@ func applySummary(ctx context.Context, m *vaultDataSourceModel, v *vaultcatalogv
 	m.TeamIDs, diags = types.ListValueFrom(ctx, types.StringType, teamIDs)
 
 	return diags
+}
+
+func enumName(name, prefix string) string {
+	return strings.ToLower(strings.TrimPrefix(name, prefix))
+}
+
+// lookup resolves the vault by id when it is set and by label otherwise.
+func (d *vaultDataSource) lookup(ctx context.Context, orgS2R string, config *vaultDataSourceModel) (*vaultMatch, error) {
+	if !config.ID.IsNull() && !config.ID.IsUnknown() {
+		id := config.ID.ValueString()
+
+		resp, err := d.client.VaultBrowse.DescribeVault(ctx, connect.NewRequest(&vaultbrowsev1.DescribeVaultRequest{
+			Base: &vaultbrowsev1.DescribeVaultRequest_Base{VaultId: id},
+		}))
+		if err != nil {
+			return nil, fmt.Errorf("id %q: describing vault: %w", id, err)
+		}
+
+		return &vaultMatch{VaultID: id, Label: resp.Msg.GetLabel(), Described: resp.Msg}, nil
+	}
+
+	label := config.Label.ValueString()
+
+	match, err := d.findByLabel(ctx, orgS2R, label)
+	if err != nil {
+		return nil, fmt.Errorf("label %q: %w", label, err)
+	}
+
+	return match, nil
+}
+
+// applyMatch fills the attributes the lookup path knows. Shared-only vaults leave them null.
+func applyMatch(ctx context.Context, m *vaultDataSourceModel, match *vaultMatch) diag.Diagnostics {
+	if match.Described != nil {
+		m.CustodyClass = types.StringValue(enumName(match.Described.GetCustodyClass().String(), "CUSTODY_CLASS_"))
+		m.Status = types.StringValue(enumName(match.Described.GetStatus().String(), "VAULT_STATUS_"))
+	}
+
+	if match.Summary != nil {
+		return applySummary(ctx, m, match.Summary)
+	}
+
+	return nil
 }
