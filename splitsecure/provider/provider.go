@@ -18,6 +18,7 @@ import (
 
 	"github.com/splitsecure/terraform-provider-splitsecure/splitsecure/authn"
 	"github.com/splitsecure/terraform-provider-splitsecure/splitsecure/client"
+	"github.com/splitsecure/terraform-provider-splitsecure/splitsecure/services/connectedapp"
 	"github.com/splitsecure/terraform-provider-splitsecure/splitsecure/services/oidc"
 	"github.com/splitsecure/terraform-provider-splitsecure/splitsecure/services/org"
 	"github.com/splitsecure/terraform-provider-splitsecure/splitsecure/services/saml2"
@@ -166,6 +167,7 @@ func (p *splitsecureProvider) Resources(_ context.Context) []func() resource.Res
 	return []func() resource.Resource{
 		saml2.NewIdentityProviderResource,
 		oidc.NewIssuerResource,
+		connectedapp.NewConnectedAppResource,
 		org.NewGrant,
 		org.NewGroup,
 	}

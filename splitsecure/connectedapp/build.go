@@ -123,10 +123,14 @@ func (t *Template) build(binding Binding, fields []*pb.Field, instances []Instan
 	params := &pb.CreateAppParams{Template: t.Name, Title: t.Title, Fields: all}
 
 	if binding.SAML2 != nil {
-		params.App = &pb.CreateAppParams_Saml2{Saml2: &pb.SAML2CreateApp{
-			SpMetadata: proto.CloneOf(binding.SAML2),
-			Layout:     t.saml2LayoutFor(all, placed.attributes, o.nameID),
-		}}
+		layout := t.saml2LayoutFor(all, placed.attributes, o.nameID)
+
+		// The NameID stays in the layout whatever it uses, and the enclave refuses one that uses a field the app lacks.
+		if nameID := layout.GetNameId(); !usesOnly(nameID.GetFormat(), all) || !usesOnly(nameID.GetValue(), all) {
+			return nil, fmt.Errorf("%w: the %s template's NameID uses a field the app does not carry; set %s or give a NameID", ErrRequired, t.Name, fieldNameID)
+		}
+
+		params.App = &pb.CreateAppParams_Saml2{Saml2: &pb.SAML2CreateApp{SpMetadata: proto.CloneOf(binding.SAML2), Layout: layout}}
 
 		return params, nil
 	}

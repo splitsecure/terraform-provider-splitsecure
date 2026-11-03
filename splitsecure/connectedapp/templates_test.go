@@ -114,7 +114,7 @@ func assertBuiltFrom(t *testing.T, tmpl *Template, params *pb.CreateAppParams) {
 }
 
 // minimalInputs returns a field or an instance for every required field the
-// template does not fill itself.
+// template does not fill itself, and a SAML2 template's NameID.
 func minimalInputs(t *testing.T, tmpl *Template) ([]*pb.Field, []Instance) {
 	t.Helper()
 
@@ -137,6 +137,10 @@ func minimalInputs(t *testing.T, tmpl *Template) ([]*pb.Field, []Instance) {
 		}
 
 		fields = append(fields, f)
+	}
+
+	if tmpl.Protocol == ProtocolSAML2 {
+		fields = append(fields, FixedString(fieldNameID, "user@example.com"))
 	}
 
 	return fields, instances

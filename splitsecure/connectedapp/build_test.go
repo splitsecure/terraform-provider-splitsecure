@@ -209,6 +209,7 @@ func TestBuildSAML2AWSWithSessionRangeAndTwoTags(t *testing.T) {
 		FixedString("role_arn", roleARN),
 		DurationRange("session_duration", 900, 3600, new(int64(1800))),
 		FixedString("name_id_format", emailFormat),
+		FixedString("name_id", "ops@corp.example"),
 	}
 	instances := []Instance{
 		{Key: "Team", Field: FixedString("session_tag", "platform")},
@@ -229,6 +230,7 @@ func TestBuildSAML2AWSWithSessionRangeAndTwoTags(t *testing.T) {
 			pbFixed("role_arn", "Role ARN", roleARN),
 			pbRange("session_duration", "Session duration", 900, 3600, secs(1800)),
 			pbFixed("name_id_format", "NameID format", emailFormat),
+			pbFixed("name_id", "NameID", "ops@corp.example"),
 			pbFixed("session_tag_1", "Session tag", "platform"),
 			pbRequester("session_tag_2", "Session tag", pb.Requester_REQUESTER_EMAIL, nil),
 			pbRequester("role_session_name", "Role session name", pb.Requester_REQUESTER_SESSION_NAME, nil),
@@ -293,13 +295,17 @@ func TestBuildDropsLayoutEntriesOfUnsetOptionalFields(t *testing.T) {
 
 	got, err := Build("saml2/pagerduty", Binding{SAML2: meta}, []*pb.Field{
 		FixedString("name_id_format", emailFormat),
+		RequesterString("requester_email", pb.Requester_REQUESTER_EMAIL, ""),
 		FixedString("role", "observer"),
-	}, nil)
+	}, nil, WithNameID(FieldPart("requester_email")))
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	want := []*pb.SAML2AttributeLayout{{Name: "role", Value: expr(ref("role"))}}
+	want := []*pb.SAML2AttributeLayout{
+		{Name: "email", Value: expr(ref("requester_email"))},
+		{Name: "role", Value: expr(ref("role"))},
+	}
 	assertProtoEqual(t, &pb.SAML2Layout{Attributes: got.GetSaml2().GetLayout().GetAttributes()}, &pb.SAML2Layout{Attributes: want})
 
 	oidc, err := Build("oidc/generic", Binding{OIDCKeyID: []byte{9}}, []*pb.Field{
@@ -362,6 +368,8 @@ func TestBuildRefuses(t *testing.T) {
 		{name: "both bindings", template: "oidc/generic", binding: Binding{SAML2: saml.SAML2, OIDCKeyID: oidc.OIDCKeyID}, fields: generic, want: ErrBinding},
 		{name: "no binding", template: "oidc/generic", fields: generic, want: ErrBinding},
 		{name: "NameID on OIDC", template: "oidc/generic", binding: oidc, fields: generic, opts: []Option{WithNameID(TextPart("x"))}, want: ErrNameID},
+		{name: "NameID field unset", template: "saml2/aws", binding: saml, fields: awsSAML, want: ErrRequired},
+		{name: "NameID part names an unset field", template: "saml2/aws", binding: saml, fields: awsSAML, opts: []Option{WithNameID(FieldPart("requester_email"))}, want: ErrRequired},
 		{name: "field the template lacks", template: "oidc/generic", binding: oidc, fields: append(slices.Clone(generic), FixedString("nope", "x")), want: ErrUnknownField},
 		{name: "repeatable field given as a field", template: "oidc/aws", binding: oidc, fields: []*pb.Field{FixedString("role_arn", roleARN), FixedString("session_tag", "billing")}, want: ErrInstanceOnly},
 		{name: "required field unset", template: "oidc/generic", binding: oidc, fields: generic[:1], want: ErrRequired},
