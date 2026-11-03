@@ -1,0 +1,1075 @@
+{
+	"templates": [
+		{
+			"name": "saml2/gcp",
+			"title": "Google Cloud Platform",
+			"protocol": "saml2",
+			"fields": [
+				{
+					"name": "name_id_format",
+					"label": "NameID format",
+					"type": "string",
+					"repeatable": false,
+					"required": true,
+					"sources": ["fixed"],
+					"choices": [
+						"urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress",
+						"urn:oasis:names:tc:SAML:2.0:nameid-format:persistent",
+						"urn:oasis:names:tc:SAML:2.0:nameid-format:transient",
+						"urn:oasis:names:tc:SAML:1.1:nameid-format:unspecified"
+					]
+				},
+				{
+					"name": "name_id",
+					"label": "NameID",
+					"type": "string",
+					"repeatable": false,
+					"required": false,
+					"sources": ["fixed", "modifiable", "derivedAtCreation", "derivedPerSignIn"]
+				},
+				{
+					"name": "requester_email",
+					"label": "Requester's email",
+					"type": "string",
+					"repeatable": false,
+					"required": false,
+					"sources": ["requester"],
+					"requesters": ["REQUESTER_EMAIL"]
+				},
+				{
+					"name": "requester_session_name",
+					"label": "Requester's session name",
+					"type": "string",
+					"repeatable": false,
+					"required": false,
+					"sources": ["requester"],
+					"requesters": ["REQUESTER_SESSION_NAME"]
+				}
+			],
+			"layout": {
+				"audience": {
+					"entityId": {}
+				},
+				"nameId": {
+					"format": {
+						"parts": [
+							{
+								"field": {
+									"name": "name_id_format"
+								}
+							}
+						]
+					},
+					"value": {
+						"parts": [
+							{
+								"field": {
+									"name": "name_id"
+								}
+							}
+						]
+					}
+				}
+			},
+			"each": []
+		},
+		{
+			"name": "saml2/google-workspace",
+			"title": "Google Workspace",
+			"protocol": "saml2",
+			"fields": [
+				{
+					"name": "name_id_format",
+					"label": "NameID format",
+					"type": "string",
+					"repeatable": false,
+					"required": true,
+					"sources": ["fixed"],
+					"choices": [
+						"urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress",
+						"urn:oasis:names:tc:SAML:2.0:nameid-format:persistent",
+						"urn:oasis:names:tc:SAML:2.0:nameid-format:transient",
+						"urn:oasis:names:tc:SAML:1.1:nameid-format:unspecified"
+					]
+				},
+				{
+					"name": "name_id",
+					"label": "NameID",
+					"type": "string",
+					"repeatable": false,
+					"required": false,
+					"sources": ["fixed", "modifiable", "derivedAtCreation", "derivedPerSignIn"]
+				},
+				{
+					"name": "requester_email",
+					"label": "Requester's email",
+					"type": "string",
+					"repeatable": false,
+					"required": false,
+					"sources": ["requester"],
+					"requesters": ["REQUESTER_EMAIL"]
+				},
+				{
+					"name": "requester_session_name",
+					"label": "Requester's session name",
+					"type": "string",
+					"repeatable": false,
+					"required": false,
+					"sources": ["requester"],
+					"requesters": ["REQUESTER_SESSION_NAME"]
+				}
+			],
+			"layout": {
+				"audience": {
+					"entityId": {}
+				},
+				"nameId": {
+					"format": {
+						"parts": [
+							{
+								"field": {
+									"name": "name_id_format"
+								}
+							}
+						]
+					},
+					"value": {
+						"parts": [
+							{
+								"field": {
+									"name": "name_id"
+								}
+							}
+						]
+					}
+				}
+			},
+			"each": []
+		},
+		{
+			"name": "saml2/google-workspace-legacy",
+			"title": "Google Workspace Legacy",
+			"protocol": "saml2",
+			"fields": [
+				{
+					"name": "name_id_format",
+					"label": "NameID format",
+					"type": "string",
+					"repeatable": false,
+					"required": true,
+					"sources": ["fixed"],
+					"choices": [
+						"urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress",
+						"urn:oasis:names:tc:SAML:2.0:nameid-format:persistent",
+						"urn:oasis:names:tc:SAML:2.0:nameid-format:transient",
+						"urn:oasis:names:tc:SAML:1.1:nameid-format:unspecified"
+					]
+				},
+				{
+					"name": "name_id",
+					"label": "NameID",
+					"type": "string",
+					"repeatable": false,
+					"required": false,
+					"sources": ["fixed", "modifiable", "derivedAtCreation", "derivedPerSignIn"]
+				},
+				{
+					"name": "requester_email",
+					"label": "Requester's email",
+					"type": "string",
+					"repeatable": false,
+					"required": false,
+					"sources": ["requester"],
+					"requesters": ["REQUESTER_EMAIL"]
+				},
+				{
+					"name": "requester_session_name",
+					"label": "Requester's session name",
+					"type": "string",
+					"repeatable": false,
+					"required": false,
+					"sources": ["requester"],
+					"requesters": ["REQUESTER_SESSION_NAME"]
+				}
+			],
+			"layout": {
+				"audience": {
+					"entityId": {}
+				},
+				"nameId": {
+					"format": {
+						"parts": [
+							{
+								"field": {
+									"name": "name_id_format"
+								}
+							}
+						]
+					},
+					"value": {
+						"parts": [
+							{
+								"field": {
+									"name": "name_id"
+								}
+							}
+						]
+					}
+				},
+				"attributes": [
+					{
+						"name": "Email",
+						"value": {
+							"parts": [
+								{
+									"field": {
+										"name": "name_id"
+									}
+								}
+							]
+						}
+					}
+				]
+			},
+			"each": []
+		},
+		{
+			"name": "saml2/cloudflare",
+			"title": "Cloudflare",
+			"protocol": "saml2",
+			"fields": [
+				{
+					"name": "name_id_format",
+					"label": "NameID format",
+					"type": "string",
+					"repeatable": false,
+					"required": true,
+					"sources": ["fixed"],
+					"choices": [
+						"urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress",
+						"urn:oasis:names:tc:SAML:2.0:nameid-format:persistent",
+						"urn:oasis:names:tc:SAML:2.0:nameid-format:transient",
+						"urn:oasis:names:tc:SAML:1.1:nameid-format:unspecified"
+					]
+				},
+				{
+					"name": "name_id",
+					"label": "NameID",
+					"type": "string",
+					"repeatable": false,
+					"required": false,
+					"sources": ["fixed", "modifiable", "derivedAtCreation", "derivedPerSignIn"]
+				},
+				{
+					"name": "requester_email",
+					"label": "Requester's email",
+					"type": "string",
+					"repeatable": false,
+					"required": false,
+					"sources": ["requester"],
+					"requesters": ["REQUESTER_EMAIL"]
+				},
+				{
+					"name": "requester_session_name",
+					"label": "Requester's session name",
+					"type": "string",
+					"repeatable": false,
+					"required": false,
+					"sources": ["requester"],
+					"requesters": ["REQUESTER_SESSION_NAME"]
+				},
+				{
+					"name": "sso_endpoint",
+					"label": "SSO endpoint",
+					"type": "string",
+					"repeatable": false,
+					"required": true,
+					"sources": ["fixed"]
+				}
+			],
+			"layout": {
+				"audience": {
+					"entityId": {}
+				},
+				"nameId": {
+					"format": {
+						"parts": [
+							{
+								"field": {
+									"name": "name_id_format"
+								}
+							}
+						]
+					},
+					"value": {
+						"parts": [
+							{
+								"field": {
+									"name": "name_id"
+								}
+							}
+						]
+					}
+				},
+				"attributes": [
+					{
+						"name": "email",
+						"value": {
+							"parts": [
+								{
+									"field": {
+										"name": "name_id"
+									}
+								}
+							]
+						}
+					}
+				]
+			},
+			"each": []
+		},
+		{
+			"name": "saml2/iru",
+			"title": "Iru",
+			"protocol": "saml2",
+			"fields": [
+				{
+					"name": "name_id_format",
+					"label": "NameID format",
+					"type": "string",
+					"repeatable": false,
+					"required": true,
+					"sources": ["fixed"],
+					"choices": [
+						"urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress",
+						"urn:oasis:names:tc:SAML:2.0:nameid-format:persistent",
+						"urn:oasis:names:tc:SAML:2.0:nameid-format:transient",
+						"urn:oasis:names:tc:SAML:1.1:nameid-format:unspecified"
+					]
+				},
+				{
+					"name": "name_id",
+					"label": "NameID",
+					"type": "string",
+					"repeatable": false,
+					"required": false,
+					"sources": ["fixed", "modifiable", "derivedAtCreation", "derivedPerSignIn"]
+				},
+				{
+					"name": "requester_email",
+					"label": "Requester's email",
+					"type": "string",
+					"repeatable": false,
+					"required": false,
+					"sources": ["requester"],
+					"requesters": ["REQUESTER_EMAIL"]
+				},
+				{
+					"name": "requester_session_name",
+					"label": "Requester's session name",
+					"type": "string",
+					"repeatable": false,
+					"required": false,
+					"sources": ["requester"],
+					"requesters": ["REQUESTER_SESSION_NAME"]
+				}
+			],
+			"layout": {
+				"audience": {
+					"entityId": {}
+				},
+				"nameId": {
+					"format": {
+						"parts": [
+							{
+								"field": {
+									"name": "name_id_format"
+								}
+							}
+						]
+					},
+					"value": {
+						"parts": [
+							{
+								"field": {
+									"name": "name_id"
+								}
+							}
+						]
+					}
+				}
+			},
+			"each": []
+		},
+		{
+			"name": "saml2/microsoft-entra-id",
+			"title": "Entra ID",
+			"protocol": "saml2",
+			"fields": [
+				{
+					"name": "name_id_format",
+					"label": "NameID format",
+					"type": "string",
+					"repeatable": false,
+					"required": true,
+					"sources": ["fixed"],
+					"choices": [
+						"urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress",
+						"urn:oasis:names:tc:SAML:2.0:nameid-format:persistent",
+						"urn:oasis:names:tc:SAML:2.0:nameid-format:transient",
+						"urn:oasis:names:tc:SAML:1.1:nameid-format:unspecified"
+					]
+				},
+				{
+					"name": "name_id",
+					"label": "NameID",
+					"type": "string",
+					"repeatable": false,
+					"required": false,
+					"sources": ["fixed", "modifiable", "derivedAtCreation", "derivedPerSignIn"]
+				},
+				{
+					"name": "requester_email",
+					"label": "Requester's email",
+					"type": "string",
+					"repeatable": false,
+					"required": false,
+					"sources": ["requester"],
+					"requesters": ["REQUESTER_EMAIL"]
+				},
+				{
+					"name": "requester_session_name",
+					"label": "Requester's session name",
+					"type": "string",
+					"repeatable": false,
+					"required": false,
+					"sources": ["requester"],
+					"requesters": ["REQUESTER_SESSION_NAME"]
+				},
+				{
+					"name": "user_principal_name",
+					"label": "User principal name",
+					"type": "string",
+					"repeatable": false,
+					"required": true,
+					"sources": ["fixed"]
+				}
+			],
+			"layout": {
+				"audience": {
+					"entityId": {}
+				},
+				"nameId": {
+					"format": {
+						"parts": [
+							{
+								"field": {
+									"name": "name_id_format"
+								}
+							}
+						]
+					},
+					"value": {
+						"parts": [
+							{
+								"field": {
+									"name": "name_id"
+								}
+							}
+						]
+					}
+				},
+				"attributes": [
+					{
+						"name": "IDPEmail",
+						"value": {
+							"parts": [
+								{
+									"field": {
+										"name": "user_principal_name"
+									}
+								}
+							]
+						}
+					}
+				],
+				"authnContextClassRef": "http://schemas.microsoft.com/claims/multipleauthn"
+			},
+			"each": []
+		},
+		{
+			"name": "saml2/okta",
+			"title": "Okta",
+			"protocol": "saml2",
+			"fields": [
+				{
+					"name": "name_id_format",
+					"label": "NameID format",
+					"type": "string",
+					"repeatable": false,
+					"required": true,
+					"sources": ["fixed"],
+					"choices": [
+						"urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress",
+						"urn:oasis:names:tc:SAML:2.0:nameid-format:persistent",
+						"urn:oasis:names:tc:SAML:2.0:nameid-format:transient",
+						"urn:oasis:names:tc:SAML:1.1:nameid-format:unspecified"
+					]
+				},
+				{
+					"name": "name_id",
+					"label": "NameID",
+					"type": "string",
+					"repeatable": false,
+					"required": false,
+					"sources": ["fixed", "modifiable", "derivedAtCreation", "derivedPerSignIn"]
+				},
+				{
+					"name": "requester_email",
+					"label": "Requester's email",
+					"type": "string",
+					"repeatable": false,
+					"required": false,
+					"sources": ["requester"],
+					"requesters": ["REQUESTER_EMAIL"]
+				},
+				{
+					"name": "requester_session_name",
+					"label": "Requester's session name",
+					"type": "string",
+					"repeatable": false,
+					"required": false,
+					"sources": ["requester"],
+					"requesters": ["REQUESTER_SESSION_NAME"]
+				},
+				{
+					"name": "session_amr",
+					"label": "Authentication methods",
+					"type": "stringList",
+					"repeatable": false,
+					"required": true,
+					"sources": ["fixed"],
+					"choices": ["mfa", "user", "hwk", "mca"]
+				}
+			],
+			"layout": {
+				"audience": {
+					"entityId": {}
+				},
+				"nameId": {
+					"format": {
+						"parts": [
+							{
+								"field": {
+									"name": "name_id_format"
+								}
+							}
+						]
+					},
+					"value": {
+						"parts": [
+							{
+								"field": {
+									"name": "name_id"
+								}
+							}
+						]
+					}
+				},
+				"attributes": [
+					{
+						"name": "session.amr",
+						"value": {
+							"parts": [
+								{
+									"field": {
+										"name": "session_amr"
+									}
+								}
+							]
+						}
+					}
+				]
+			},
+			"each": []
+		},
+		{
+			"name": "saml2/oracle-cloud",
+			"title": "Oracle Cloud",
+			"protocol": "saml2",
+			"fields": [
+				{
+					"name": "name_id_format",
+					"label": "NameID format",
+					"type": "string",
+					"repeatable": false,
+					"required": true,
+					"sources": ["fixed"],
+					"choices": [
+						"urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress",
+						"urn:oasis:names:tc:SAML:2.0:nameid-format:persistent",
+						"urn:oasis:names:tc:SAML:2.0:nameid-format:transient",
+						"urn:oasis:names:tc:SAML:1.1:nameid-format:unspecified"
+					]
+				},
+				{
+					"name": "name_id",
+					"label": "NameID",
+					"type": "string",
+					"repeatable": false,
+					"required": false,
+					"sources": ["fixed", "modifiable", "derivedAtCreation", "derivedPerSignIn"]
+				},
+				{
+					"name": "requester_email",
+					"label": "Requester's email",
+					"type": "string",
+					"repeatable": false,
+					"required": false,
+					"sources": ["requester"],
+					"requesters": ["REQUESTER_EMAIL"]
+				},
+				{
+					"name": "requester_session_name",
+					"label": "Requester's session name",
+					"type": "string",
+					"repeatable": false,
+					"required": false,
+					"sources": ["requester"],
+					"requesters": ["REQUESTER_SESSION_NAME"]
+				},
+				{
+					"name": "email",
+					"label": "Email",
+					"type": "string",
+					"repeatable": false,
+					"required": false,
+					"sources": ["fixed"]
+				},
+				{
+					"name": "first_name",
+					"label": "First name",
+					"type": "string",
+					"repeatable": false,
+					"required": false,
+					"sources": ["fixed"]
+				},
+				{
+					"name": "last_name",
+					"label": "Last name",
+					"type": "string",
+					"repeatable": false,
+					"required": false,
+					"sources": ["fixed"]
+				},
+				{
+					"name": "group",
+					"label": "Group",
+					"type": "string",
+					"repeatable": false,
+					"required": false,
+					"sources": ["fixed"]
+				}
+			],
+			"layout": {
+				"audience": {
+					"entityId": {}
+				},
+				"nameId": {
+					"format": {
+						"parts": [
+							{
+								"field": {
+									"name": "name_id_format"
+								}
+							}
+						]
+					},
+					"value": {
+						"parts": [
+							{
+								"field": {
+									"name": "name_id"
+								}
+							}
+						]
+					}
+				},
+				"attributes": [
+					{
+						"name": "Username",
+						"value": {
+							"parts": [
+								{
+									"field": {
+										"name": "name_id"
+									}
+								}
+							]
+						}
+					},
+					{
+						"name": "Email",
+						"value": {
+							"parts": [
+								{
+									"field": {
+										"name": "email"
+									}
+								}
+							]
+						}
+					},
+					{
+						"name": "FirstName",
+						"value": {
+							"parts": [
+								{
+									"field": {
+										"name": "first_name"
+									}
+								}
+							]
+						}
+					},
+					{
+						"name": "LastName",
+						"value": {
+							"parts": [
+								{
+									"field": {
+										"name": "last_name"
+									}
+								}
+							]
+						}
+					},
+					{
+						"name": "Group",
+						"value": {
+							"parts": [
+								{
+									"field": {
+										"name": "group"
+									}
+								}
+							]
+						}
+					}
+				]
+			},
+			"each": []
+		},
+		{
+			"name": "saml2/pagerduty",
+			"title": "PagerDuty",
+			"protocol": "saml2",
+			"fields": [
+				{
+					"name": "name_id_format",
+					"label": "NameID format",
+					"type": "string",
+					"repeatable": false,
+					"required": true,
+					"sources": ["fixed"],
+					"choices": [
+						"urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress",
+						"urn:oasis:names:tc:SAML:2.0:nameid-format:persistent",
+						"urn:oasis:names:tc:SAML:2.0:nameid-format:transient",
+						"urn:oasis:names:tc:SAML:1.1:nameid-format:unspecified"
+					]
+				},
+				{
+					"name": "name_id",
+					"label": "NameID",
+					"type": "string",
+					"repeatable": false,
+					"required": false,
+					"sources": ["fixed", "modifiable", "derivedAtCreation", "derivedPerSignIn"]
+				},
+				{
+					"name": "requester_email",
+					"label": "Requester's email",
+					"type": "string",
+					"repeatable": false,
+					"required": false,
+					"sources": ["requester"],
+					"requesters": ["REQUESTER_EMAIL"]
+				},
+				{
+					"name": "requester_session_name",
+					"label": "Requester's session name",
+					"type": "string",
+					"repeatable": false,
+					"required": false,
+					"sources": ["requester"],
+					"requesters": ["REQUESTER_SESSION_NAME"]
+				},
+				{
+					"name": "full_name",
+					"label": "Name",
+					"type": "string",
+					"repeatable": false,
+					"required": false,
+					"sources": ["fixed"]
+				},
+				{
+					"name": "role",
+					"label": "Role",
+					"type": "string",
+					"repeatable": false,
+					"required": false,
+					"sources": ["fixed"],
+					"choices": [
+						"admin",
+						"user",
+						"limited_user",
+						"observer",
+						"read_only_user",
+						"read_only_limited_user",
+						"restricted_access"
+					]
+				},
+				{
+					"name": "job_responsibilities",
+					"label": "Job responsibilities",
+					"type": "string",
+					"repeatable": false,
+					"required": false,
+					"sources": ["fixed"]
+				}
+			],
+			"layout": {
+				"audience": {
+					"entityId": {}
+				},
+				"nameId": {
+					"format": {
+						"parts": [
+							{
+								"field": {
+									"name": "name_id_format"
+								}
+							}
+						]
+					},
+					"value": {
+						"parts": [
+							{
+								"field": {
+									"name": "name_id"
+								}
+							}
+						]
+					}
+				},
+				"attributes": [
+					{
+						"name": "email",
+						"value": {
+							"parts": [
+								{
+									"field": {
+										"name": "name_id"
+									}
+								}
+							]
+						}
+					},
+					{
+						"name": "name",
+						"value": {
+							"parts": [
+								{
+									"field": {
+										"name": "full_name"
+									}
+								}
+							]
+						}
+					},
+					{
+						"name": "role",
+						"value": {
+							"parts": [
+								{
+									"field": {
+										"name": "role"
+									}
+								}
+							]
+						}
+					},
+					{
+						"name": "jobresponsibilities",
+						"value": {
+							"parts": [
+								{
+									"field": {
+										"name": "job_responsibilities"
+									}
+								}
+							]
+						}
+					}
+				]
+			},
+			"each": []
+		},
+		{
+			"name": "saml2/rapid7",
+			"title": "Rapid7",
+			"protocol": "saml2",
+			"fields": [
+				{
+					"name": "name_id_format",
+					"label": "NameID format",
+					"type": "string",
+					"repeatable": false,
+					"required": true,
+					"sources": ["fixed"],
+					"choices": [
+						"urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress",
+						"urn:oasis:names:tc:SAML:2.0:nameid-format:persistent",
+						"urn:oasis:names:tc:SAML:2.0:nameid-format:transient",
+						"urn:oasis:names:tc:SAML:1.1:nameid-format:unspecified"
+					]
+				},
+				{
+					"name": "name_id",
+					"label": "NameID",
+					"type": "string",
+					"repeatable": false,
+					"required": false,
+					"sources": ["fixed", "modifiable", "derivedAtCreation", "derivedPerSignIn"]
+				},
+				{
+					"name": "requester_email",
+					"label": "Requester's email",
+					"type": "string",
+					"repeatable": false,
+					"required": false,
+					"sources": ["requester"],
+					"requesters": ["REQUESTER_EMAIL"]
+				},
+				{
+					"name": "requester_session_name",
+					"label": "Requester's session name",
+					"type": "string",
+					"repeatable": false,
+					"required": false,
+					"sources": ["requester"],
+					"requesters": ["REQUESTER_SESSION_NAME"]
+				},
+				{
+					"name": "relay_state",
+					"label": "Relay state",
+					"type": "string",
+					"repeatable": false,
+					"required": true,
+					"sources": ["fixed"]
+				},
+				{
+					"name": "first_name",
+					"label": "First name",
+					"type": "string",
+					"repeatable": false,
+					"required": false,
+					"sources": ["fixed"]
+				},
+				{
+					"name": "last_name",
+					"label": "Last name",
+					"type": "string",
+					"repeatable": false,
+					"required": false,
+					"sources": ["fixed"]
+				},
+				{
+					"name": "rbac_groups",
+					"label": "RBAC groups",
+					"type": "stringList",
+					"repeatable": false,
+					"required": false,
+					"sources": ["fixed"]
+				}
+			],
+			"layout": {
+				"audience": {
+					"entityId": {}
+				},
+				"nameId": {
+					"format": {
+						"parts": [
+							{
+								"field": {
+									"name": "name_id_format"
+								}
+							}
+						]
+					},
+					"value": {
+						"parts": [
+							{
+								"field": {
+									"name": "name_id"
+								}
+							}
+						]
+					}
+				},
+				"attributes": [
+					{
+						"name": "Email",
+						"value": {
+							"parts": [
+								{
+									"field": {
+										"name": "name_id"
+									}
+								}
+							]
+						}
+					},
+					{
+						"name": "FirstName",
+						"value": {
+							"parts": [
+								{
+									"field": {
+										"name": "first_name"
+									}
+								}
+							]
+						}
+					},
+					{
+						"name": "LastName",
+						"value": {
+							"parts": [
+								{
+									"field": {
+										"name": "last_name"
+									}
+								}
+							]
+						}
+					},
+					{
+						"name": "rbacGroups",
+						"value": {
+							"parts": [
+								{
+									"field": {
+										"name": "rbac_groups"
+									}
+								}
+							]
+						}
+					}
+				]
+			},
+			"each": []
+		}
+	]
+}
