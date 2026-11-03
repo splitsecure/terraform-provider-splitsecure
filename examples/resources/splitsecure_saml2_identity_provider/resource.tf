@@ -1,10 +1,21 @@
+data "splitsecure_vault" "platform" {
+  label = "platform"
+}
+
 resource "splitsecure_saml2_identity_provider" "aws_console" {
-  team_s2r = "s2r:us:team:..."
+  vault_id = data.splitsecure_vault.platform.id
 
   name        = "platform-engineering/aws-123456789012"
   description = "SAML IdP fronting AWS account 123456789012."
-  # provider_id (SAML EntityID) defaults to a six-BIP39-word URL
-  # (matches the web UI). Set explicitly for a stable URN-form
-  # EntityID. sso_url_redirect and sso_url_post are server-assigned
-  # (read-only) and anchor on the deployment's frontend host.
+
+  # Shown to approvers when the create needs approval. Write-only.
+  justification = "Federate the AWS console for platform engineering"
+
+  # Hold the create open for approval before Terraform starts polling.
+  wait = "30s"
+}
+
+resource "aws_iam_saml_provider" "splitsecure" {
+  name                   = "splitsecure"
+  saml_metadata_document = splitsecure_saml2_identity_provider.aws_console.metadata_xml
 }

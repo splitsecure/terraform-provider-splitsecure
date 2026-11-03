@@ -13,3 +13,15 @@ terraform {
 provider "splitsecure" {
   org_s2r = "s2r:us:org:..."
 }
+
+# Inside GitHub Actions, sign in with the job's ID token instead of a key.
+# The job needs the id-token: write permission, and the service account
+# needs a binding that matches the workflow. Use this block in place of the
+# one above.
+#
+# provider "splitsecure" {
+#   org_s2r             = "s2r:us:org:..."
+#   service_account_s2r = "s2r:us:sa:..."
+#
+#   workload_identity {}
+# }

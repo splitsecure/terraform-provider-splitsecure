@@ -7,16 +7,14 @@ import (
 	"fmt"
 	"time"
 
-	saml2v2 "github.com/splitsecure/apis/gen/go/proto/splitsecure/saml2/v2"
+	saml2v3 "github.com/splitsecure/apis/gen/go/proto/splitsecure/enclaveservices/saml2/v3"
 )
 
-// idpMetadataXML renders the SAML 2.0 EntityDescriptor for an IdPState.
+// idpMetadataXML renders the SAML 2.0 EntityDescriptor for IdPParams.
 // The output is byte-stable across reads: validUntil is anchored to
 // the signing cert's NotAfter so refreshing terraform does not produce
-// drift on every plan. Mirrors the rendering rules in priv's
-// common/saml2.MetadataOfIDPState; if those diverge, metadata_test.go's
-// golden fixture catches it.
-func idpMetadataXML(idp *saml2v2.IdPState) ([]byte, error) {
+// drift on every plan.
+func idpMetadataXML(idp *saml2v3.IdPParams) ([]byte, error) {
 	wantAuthnRequestsSigned := false
 	descriptor := idpSSODescriptor{
 		ProtocolSupportEnumeration: "urn:oasis:names:tc:SAML:2.0:protocol",
@@ -82,10 +80,6 @@ func validUntilFromCert(der []byte) (string, error) {
 
 	return cert.NotAfter.UTC().Format(time.RFC3339), nil
 }
-
-// XML struct definitions for the SAML metadata document. Lowercased to
-// keep them package-private; renaming would diverge from priv's shapes
-// for no gain.
 
 type entityDescriptor struct {
 	XMLName          xml.Name          `xml:"urn:oasis:names:tc:SAML:2.0:metadata EntityDescriptor"`

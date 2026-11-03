@@ -59,8 +59,34 @@ type errorResponse struct {
 	ErrorDescription string `json:"error_description"` //nolint:tagliatelle // RFC 6749 field name.
 }
 
-// exchanger turns a service account key into a service token in two hops.
-// The assertion buys an identity token at the identity issuer, and the
+// credential produces the form of the first hop, the one that buys an
+// identity token. It runs on every refresh, so an implementation must not
+// reuse a spent proof.
+type credential interface {
+	firstHopForm(ctx context.Context, audience string) (url.Values, error)
+}
+
+// keyCredential proves the account by signing an assertion with its key.
+type keyCredential struct {
+	key    *Key
+	issuer string
+}
+
+func (c keyCredential) firstHopForm(_ context.Context, audience string) (url.Values, error) {
+	assertion, err := c.key.assertion(c.issuer, time.Now())
+	if err != nil {
+		return nil, err
+	}
+
+	return url.Values{
+		"grant_type": {grantJWTBearer},
+		"assertion":  {assertion},
+		"audience":   {audience},
+	}, nil
+}
+
+// exchanger turns a credential into a service token in two hops. The
+// credential buys an identity token at the identity issuer, and the
 // identity token buys a service token at the API's own exchange. Both are
 // bound to the same DPoP key.
 type exchanger struct {
@@ -70,28 +96,23 @@ type exchanger struct {
 	audience  string
 	org       string
 	userAgent string
-	key       *Key
+	cred      credential
 	dpop      *dpopKey
 }
 
 func (e *exchanger) serviceToken(ctx context.Context) (string, time.Time, error) {
 	now := time.Now()
 
-	assertion, err := e.key.assertion(e.endpoint+"/authn", now)
+	form, err := e.cred.firstHopForm(ctx, e.audience)
 	if err != nil {
 		return "", time.Time{}, err
-	}
-	form := url.Values{
-		"grant_type": {grantJWTBearer},
-		"assertion":  {assertion},
-		"audience":   {e.audience},
 	}
 	if e.org != "" {
 		form.Set("organization", e.org)
 	}
 	identity, err := e.post(ctx, identityExchangePath, form)
 	if err != nil {
-		return "", time.Time{}, fmt.Errorf("exchanging the service account key for an identity token: %w", err)
+		return "", time.Time{}, fmt.Errorf("exchanging the credential for an identity token: %w", err)
 	}
 
 	service, err := e.post(ctx, serviceExchangePath, url.Values{

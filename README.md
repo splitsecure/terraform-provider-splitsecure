@@ -15,11 +15,26 @@ Generated reference docs live in [`docs/`](./docs); per-resource attribute table
 
 ## Authentication
 
+The provider signs in as a service account. Use a key, or use workload identity. Setting both is an error.
+
+### Key
+
 1. Create a service account in the SplitSecure admin console.
 2. Register a public key for it (ECDSA P-256, P-384, P-521 or Ed25519; RSA is refused). The console shows the key id.
 3. Give the provider the account s2r, the key id and the private key, through the HCL block or the `SPLITSECURE_SERVICE_ACCOUNT_S2R`, `SPLITSECURE_KEY_ID` and `SPLITSECURE_PRIVATE_KEY` environment variables.
 
 The provider signs a short assertion with the key, exchanges it for a service token and binds every request to a per-process DPoP key. The private key never leaves the machine.
+
+### Workload identity
+
+Workload identity signs in with an OIDC token from your CI system, so no long-lived key is stored. GitHub Actions is supported first.
+
+1. Create a service account in the SplitSecure admin console.
+2. Add a binding to the account that matches your workflow's token.
+3. Add an empty `workload_identity` block to the provider and set `service_account_s2r`.
+4. Give the job the `id-token: write` permission.
+
+The provider asks GitHub for a new ID token on every refresh and sends it with the service account s2r. It never stores the token. To use a token from another source, set `workload_identity.token` or `SPLITSECURE_WORKLOAD_TOKEN`. The token's `aud` claim must be the endpoint's origin, for example `https://monolith.us-east-2.aws.splitsecure.com`.
 
 ## Installation (dev override)
 
@@ -48,6 +63,21 @@ provider "splitsecure" {
   org_s2r             = "s2r:<deployment>:org:<org_id>"  # required; or SPLITSECURE_ORG_S2R fallback
 }
 ```
+
+With workload identity inside GitHub Actions, drop `key_id` and `private_key` and add an empty block:
+
+```hcl
+provider "splitsecure" {
+  service_account_s2r = "s2r:<deployment>:sa:<id>"
+  org_s2r             = "s2r:<deployment>:org:<org_id>"
+
+  workload_identity {}
+}
+```
+
+`tls_ca_pem` (or `SPLITSECURE_TLS_CA_PEM`) is the root certificate for a private deployment with its own certificate authority.
+
+`workload_identity.token` (sensitive, or `SPLITSECURE_WORKLOAD_TOKEN`) overrides the GitHub token.
 
 `org_s2r` is provider-scoped, not per-resource — it's only consumed by the proposal-scoped enclave spawn at Send time. Multi-org callers alias the provider.
 

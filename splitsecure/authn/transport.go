@@ -20,8 +20,12 @@ const (
 )
 
 var (
-	// ErrMissingKey is returned by NewTransport when Config.Key is nil.
-	ErrMissingKey = errors.New("a service account key is required")
+	// ErrMissingKey is returned by NewTransport when neither Config.Key nor
+	// Config.Workload is set.
+	ErrMissingKey = errors.New("a service account key or a workload identity is required")
+	// ErrAmbiguousCredential is returned by NewTransport when both
+	// Config.Key and Config.Workload are set.
+	ErrAmbiguousCredential = errors.New("set either a service account key or a workload identity, not both")
 	// ErrEndpoint is returned when the endpoint is not an absolute URL.
 	ErrEndpoint = errors.New("the endpoint is not an absolute URL")
 )
@@ -32,8 +36,11 @@ type Config struct {
 	// Endpoint is the API origin, for example https://api.example.com.
 	// The token endpoints and the audience derive from it.
 	Endpoint string
-	// Key is the registered service account key to sign in with.
+	// Key is the registered service account key to sign in with. Exactly
+	// one of Key and Workload must be set.
 	Key *Key
+	// Workload signs in with an external OIDC token instead of a key.
+	Workload *Workload
 	// Organization is the s2r of the organization the account acts in.
 	// Optional. When set, the identity token carries the account's group
 	// memberships in that organization.
@@ -65,13 +72,14 @@ type Transport struct {
 // NewTransport builds a Transport. It generates the DPoP key but makes no
 // network call; the first request triggers the first exchange.
 func NewTransport(cfg Config) (*Transport, error) {
-	if cfg.Key == nil {
-		return nil, ErrMissingKey
-	}
 	endpoint := strings.TrimRight(cfg.Endpoint, "/")
 	u, err := url.Parse(endpoint)
 	if err != nil || u.Scheme == "" || u.Host == "" {
 		return nil, fmt.Errorf("%w: %q", ErrEndpoint, cfg.Endpoint)
+	}
+	cred, err := credentialFor(cfg, endpoint)
+	if err != nil {
+		return nil, err
 	}
 	dpop, err := newDPoPKey()
 	if err != nil {
@@ -98,10 +106,23 @@ func NewTransport(cfg Config) (*Transport, error) {
 			audience:  strings.ToLower(u.Scheme + "://" + u.Host),
 			org:       cfg.Organization,
 			userAgent: cfg.UserAgent,
-			key:       cfg.Key,
+			cred:      cred,
 			dpop:      dpop,
 		},
 	}, nil
+}
+
+func credentialFor(cfg Config, endpoint string) (credential, error) {
+	switch {
+	case cfg.Key != nil && cfg.Workload != nil:
+		return nil, ErrAmbiguousCredential
+	case cfg.Key != nil:
+		return keyCredential{key: cfg.Key, issuer: endpoint + "/authn"}, nil
+	case cfg.Workload != nil:
+		return cfg.Workload, nil
+	default:
+		return nil, ErrMissingKey
+	}
 }
 
 // RoundTrip implements http.RoundTripper.
