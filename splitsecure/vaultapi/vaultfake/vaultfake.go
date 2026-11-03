@@ -31,6 +31,7 @@ type Use struct {
 	OnCreateConnectedApp func(*vaultusev1.CreateConnectedAppRequest) (*vaultusev1.CreateConnectedAppResponse, error)
 	OnDelete             func(*vaultusev1.DeleteRequest) (*vaultusev1.DeleteResponse, error)
 	OnPollTicket         func(*vaultusev1.PollTicketRequest) (*vaultusev1.PollTicketResponse, error)
+	OnCancel             func(*vaultusev1.CancelRequest) (*vaultusev1.CancelResponse, error)
 }
 
 // CreateSAML2IDP implements vaultusev1connect.VaultUseServiceHandler.
@@ -274,6 +275,20 @@ func (b *Browse) DescribeVault(ctx context.Context, req *connect.Request[vaultbr
 	}
 
 	resp, err := b.OnDescribeVault(req.Msg)
+	if err != nil {
+		return nil, err
+	}
+
+	return connect.NewResponse(resp), nil
+}
+
+// Cancel implements vaultusev1connect.VaultUseServiceHandler.
+func (u *Use) Cancel(ctx context.Context, req *connect.Request[vaultusev1.CancelRequest]) (*connect.Response[vaultusev1.CancelResponse], error) {
+	if u.OnCancel == nil {
+		return u.UnimplementedVaultUseServiceHandler.Cancel(ctx, req)
+	}
+
+	resp, err := u.OnCancel(req.Msg)
 	if err != nil {
 		return nil, err
 	}

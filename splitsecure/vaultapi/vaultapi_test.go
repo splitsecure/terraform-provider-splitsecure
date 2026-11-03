@@ -14,6 +14,7 @@ import (
 	keysv1 "github.com/splitsecure/apis/gen/go/proto/splitsecure/keys/v1"
 	vaultbrowsev1 "github.com/splitsecure/apis/gen/go/proto/splitsecure/vaultbrowse/v1"
 	vaultusev1 "github.com/splitsecure/apis/gen/go/proto/splitsecure/vaultuse/v1"
+	"github.com/splitsecure/terraform-provider-splitsecure/splitsecure/client"
 	"github.com/splitsecure/terraform-provider-splitsecure/splitsecure/vaultapi"
 	"github.com/splitsecure/terraform-provider-splitsecure/splitsecure/vaultapi/vaultfake"
 )
@@ -179,7 +180,10 @@ func TestAwaitDelete_Denied(t *testing.T) {
 	}
 }
 
-var errGone = errors.New("gone")
+var (
+	errGone    = errors.New("gone")
+	errRefused = errors.New("refused")
+)
 
 func serveRecord(t *testing.T, kind string, params proto.Message) *vaultfake.Browse {
 	t.Helper()
@@ -320,4 +324,141 @@ func TestWriteOptions_ParsesWait(t *testing.T) {
 	if err == nil {
 		t.Error("expected an error for an unparseable wait")
 	}
+}
+
+// blockingPoll holds every poll open until release is closed. Close it before the fake server, which waits for open handlers.
+func blockingPoll(polling chan<- struct{}, release <-chan struct{}) func(*vaultusev1.PollTicketRequest) (*vaultusev1.PollTicketResponse, error) {
+	return func(*vaultusev1.PollTicketRequest) (*vaultusev1.PollTicketResponse, error) {
+		polling <- struct{}{}
+		<-release
+
+		return &vaultusev1.PollTicketResponse{}, nil
+	}
+}
+
+func awaitInterrupted(t *testing.T, c *client.Client, polling <-chan struct{}) error {
+	t.Helper()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	errs := make(chan error, 1)
+
+	go func() {
+		_, err := vaultapi.AwaitCreate(ctx, c.VaultUse, "vault-1", ticketOutcome())
+		errs <- err
+	}()
+
+	<-polling
+	cancel()
+
+	return <-errs
+}
+
+func TestAwaitCreate_CancelsTicketWhenContextEnds(t *testing.T) {
+	t.Parallel()
+
+	polling := make(chan struct{}, 1)
+	release := make(chan struct{})
+	cancelled := make(chan *vaultusev1.CancelRequest, 1)
+
+	c := vaultfake.New(t, vaultfake.Handlers{Use: &vaultfake.Use{
+		OnPollTicket: blockingPoll(polling, release),
+		OnCancel: func(req *vaultusev1.CancelRequest) (*vaultusev1.CancelResponse, error) {
+			cancelled <- req
+
+			return &vaultusev1.CancelResponse{}, nil
+		},
+	}})
+	t.Cleanup(func() { close(release) })
+
+	err := awaitInterrupted(t, c, polling)
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("err = %v, want context.Canceled", err)
+	}
+
+	req := <-cancelled
+	if req.GetBase().GetVaultId() != "vault-1" || string(req.GetBase().GetTicketId()) != "t1" || req.GetBase().GetReason() != "cancelled by the Terraform provider" {
+		t.Errorf("cancel request = %v", req)
+	}
+}
+
+func TestAwaitCreate_SurfacesCancelRefusal(t *testing.T) {
+	t.Parallel()
+
+	polling := make(chan struct{}, 1)
+	release := make(chan struct{})
+
+	c := vaultfake.New(t, vaultfake.Handlers{Use: &vaultfake.Use{
+		OnPollTicket: blockingPoll(polling, release),
+		OnCancel: func(*vaultusev1.CancelRequest) (*vaultusev1.CancelResponse, error) {
+			return nil, connect.NewError(connect.CodePermissionDenied, errRefused)
+		},
+	}})
+	t.Cleanup(func() { close(release) })
+
+	err := awaitInterrupted(t, c, polling)
+	if !errors.Is(err, context.Canceled) || !strings.Contains(err.Error(), "permission_denied") {
+		t.Fatalf("err = %v, want both the cancellation and the refusal", err)
+	}
+}
+
+func TestAwaitCreate_InlineResultSendsNoCancel(t *testing.T) {
+	t.Parallel()
+
+	cancels := 0
+
+	c := vaultfake.New(t, vaultfake.Handlers{Use: &vaultfake.Use{
+		OnCancel: func(*vaultusev1.CancelRequest) (*vaultusev1.CancelResponse, error) {
+			cancels++
+
+			return &vaultusev1.CancelResponse{}, nil
+		},
+	}})
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	outcome := &vaultusev1.CreateOutcome{Union: &vaultusev1.CreateOutcome_Result{Result: &vaultusev1.CreateResult{SecretId: "node-1"}}}
+
+	_, err := vaultapi.AwaitCreate(ctx, c.VaultUse, "vault-1", outcome)
+	if err != nil || cancels != 0 {
+		t.Fatalf("err = %v, cancels = %d", err, cancels)
+	}
+}
+
+func TestAwaitDelete_CancelsTicketWhenContextEnds(t *testing.T) {
+	t.Parallel()
+
+	polling := make(chan struct{}, 1)
+	release := make(chan struct{})
+	cancelled := make(chan struct{}, 1)
+
+	c := vaultfake.New(t, vaultfake.Handlers{Use: &vaultfake.Use{
+		OnPollTicket: blockingPoll(polling, release),
+		OnCancel: func(*vaultusev1.CancelRequest) (*vaultusev1.CancelResponse, error) {
+			cancelled <- struct{}{}
+
+			return &vaultusev1.CancelResponse{}, nil
+		},
+	}})
+	t.Cleanup(func() { close(release) })
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	errs := make(chan error, 1)
+	ticket := &vaultusev1.DeleteOutcome{Union: &vaultusev1.DeleteOutcome_Ticket{Ticket: &vaultusev1.Ticket{TicketId: []byte("t1")}}}
+
+	go func() { errs <- vaultapi.AwaitDelete(ctx, c.VaultUse, "vault-1", ticket) }()
+
+	<-polling
+	cancel()
+
+	err := <-errs
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("err = %v, want context.Canceled", err)
+	}
+
+	<-cancelled
 }

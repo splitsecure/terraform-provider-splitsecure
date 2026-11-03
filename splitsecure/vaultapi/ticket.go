@@ -32,6 +32,11 @@ var (
 // immediately-returning server is not hammered.
 const emptyPollPause = time.Second
 
+const (
+	cancelTimeout = 10 * time.Second
+	cancelReason  = "cancelled by the Terraform provider"
+)
+
 // AwaitCreate returns the result of a create, polling its ticket when the server did not answer inline.
 func AwaitCreate(ctx context.Context, c vaultusev1connect.VaultUseServiceClient, vaultID string, outcome *vaultusev1.CreateOutcome) (*vaultusev1.CreateResult, error) {
 	if result := outcome.GetResult(); result != nil {
@@ -79,7 +84,40 @@ func AwaitDelete(ctx context.Context, c vaultusev1connect.VaultUseServiceClient,
 	return nil
 }
 
+// pollUntilResolved polls a ticket and, when the caller's context ends first, cancels the ticket so no approver acts on a request nobody awaits.
 func pollUntilResolved(ctx context.Context, c vaultusev1connect.VaultUseServiceClient, vaultID string, ticketID []byte) (*vaultusev1.TicketOutcome, error) {
+	outcome, err := poll(ctx, c, vaultID, ticketID)
+	if err == nil || ctx.Err() == nil {
+		return outcome, err
+	}
+
+	cancelErr := cancelTicket(ctx, c, vaultID, ticketID)
+	if cancelErr != nil {
+		return nil, fmt.Errorf("%w; %w", err, cancelErr)
+	}
+
+	return nil, err
+}
+
+func cancelTicket(ctx context.Context, c vaultusev1connect.VaultUseServiceClient, vaultID string, ticketID []byte) error {
+	ctx, stop := context.WithTimeout(context.WithoutCancel(ctx), cancelTimeout)
+	defer stop()
+
+	_, err := c.Cancel(ctx, connect.NewRequest(&vaultusev1.CancelRequest{
+		Base: &vaultusev1.CancelRequest_Base{
+			VaultId:  vaultID,
+			TicketId: ticketID,
+			Reason:   cancelReason,
+		},
+	}))
+	if err != nil {
+		return fmt.Errorf("cancelling ticket: %w", err)
+	}
+
+	return nil
+}
+
+func poll(ctx context.Context, c vaultusev1connect.VaultUseServiceClient, vaultID string, ticketID []byte) (*vaultusev1.TicketOutcome, error) {
 	for {
 		resp, err := c.PollTicket(ctx, connect.NewRequest(&vaultusev1.PollTicketRequest{
 			Base: &vaultusev1.PollTicketRequest_Base{
