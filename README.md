@@ -75,7 +75,6 @@ provider "splitsecure" {
 }
 ```
 
-`tls_ca_pem` (or `SPLITSECURE_TLS_CA_PEM`) is the root certificate for a private deployment with its own certificate authority.
 
 `workload_identity.token` (sensitive, or `SPLITSECURE_WORKLOAD_TOKEN`) overrides the GitHub token.
 

@@ -3,10 +3,6 @@ package provider
 
 import (
 	"context"
-	"crypto/tls"
-	"crypto/x509"
-	"errors"
-	"net/http"
 	"os"
 
 	"github.com/hashicorp/terraform-plugin-framework/datasource"
@@ -27,13 +23,6 @@ import (
 
 var _ provider.Provider = (*splitsecureProvider)(nil)
 
-var (
-	// ErrNoCertificate is returned when tls_ca_pem holds no certificate.
-	ErrNoCertificate = errors.New("the PEM holds no certificate")
-	// ErrDefaultTransport is returned when http.DefaultTransport is not an *http.Transport.
-	ErrDefaultTransport = errors.New("the default HTTP transport cannot be cloned")
-)
-
 const defaultEndpoint = "https://monolith.us-east-2.aws.splitsecure.com"
 
 type splitsecureProvider struct {
@@ -46,7 +35,6 @@ type splitsecureProviderModel struct {
 	ServiceAccountS2R types.String `tfsdk:"service_account_s2r"`
 	KeyID             types.String `tfsdk:"key_id"`
 	PrivateKey        types.String `tfsdk:"private_key"`
-	TLSCAPEM          types.String `tfsdk:"tls_ca_pem"`
 
 	WorkloadIdentity *workloadIdentityModel `tfsdk:"workload_identity"`
 }
@@ -96,10 +84,6 @@ func (p *splitsecureProvider) Schema(_ context.Context, _ provider.SchemaRequest
 				Description: "Required without workload_identity. PEM private key matching key_id: ECDSA P-256, P-384 or P-521, or Ed25519. RSA keys are refused. " +
 					"Falls back to SPLITSECURE_PRIVATE_KEY.",
 			},
-			"tls_ca_pem": schema.StringAttribute{
-				Optional:    true,
-				Description: "PEM root certificate that signs the endpoint's certificate, for a private deployment with its own certificate authority. Falls back to SPLITSECURE_TLS_CA_PEM.",
-			},
 		},
 		Blocks: map[string]schema.Block{
 			"workload_identity": schema.SingleNestedBlock{
@@ -140,15 +124,6 @@ func (p *splitsecureProvider) Configure(ctx context.Context, req provider.Config
 	}
 
 	cfg := client.Config{Endpoint: endpoint, OrgS2R: orgS2R, Version: p.version}
-	if caPEM := valueOrEnv(config.TLSCAPEM, "SPLITSECURE_TLS_CA_PEM"); caPEM != "" {
-		base, err := transportWithRoots(caPEM)
-		if err != nil {
-			resp.Diagnostics.AddError("Invalid tls_ca_pem", err.Error())
-
-			return
-		}
-		cfg.Base = base
-	}
 	if !p.configureCredential(&config, &cfg, &resp.Diagnostics) {
 		return
 	}
@@ -242,24 +217,6 @@ func (p *splitsecureProvider) configureWorkload(block *workloadIdentityModel, se
 	cfg.Workload = &authn.Workload{ServiceAccountS2R: serviceAccountS2R, TokenSource: source}
 
 	return true
-}
-
-// transportWithRoots returns a clone of the default transport that trusts
-// only the certificates in caPEM.
-func transportWithRoots(caPEM string) (http.RoundTripper, error) {
-	pool := x509.NewCertPool()
-	if !pool.AppendCertsFromPEM([]byte(caPEM)) {
-		return nil, ErrNoCertificate
-	}
-
-	base, ok := http.DefaultTransport.(*http.Transport)
-	if !ok {
-		return nil, ErrDefaultTransport
-	}
-	tr := base.Clone()
-	tr.TLSClientConfig = &tls.Config{RootCAs: pool, MinVersion: tls.VersionTLS12}
-
-	return tr, nil
 }
 
 func valueOrEnv(v types.String, env string) string {

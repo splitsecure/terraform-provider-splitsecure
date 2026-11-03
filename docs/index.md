@@ -51,7 +51,6 @@ provider "splitsecure" {
 - `org_s2r` (String) Org s2r URI hosting the team(s) that own the resources managed by this provider; the proposal-scoped managed enclave is spawned in this org for every Create / Delete. Falls back to SPLITSECURE_ORG_S2R. Multi-org callers alias the provider.
 - `private_key` (String, Sensitive) Required without workload_identity. PEM private key matching key_id: ECDSA P-256, P-384 or P-521, or Ed25519. RSA keys are refused. Falls back to SPLITSECURE_PRIVATE_KEY.
 - `service_account_s2r` (String) Required. Service account s2r URI (s2r:<deployment>:sa:<id>). Falls back to SPLITSECURE_SERVICE_ACCOUNT_S2R.
-- `tls_ca_pem` (String) PEM root certificate that signs the endpoint's certificate, for a private deployment with its own certificate authority. Falls back to SPLITSECURE_TLS_CA_PEM.
 - `workload_identity` (Block, Optional) Sign in with an external OIDC token instead of a key. The service account needs a binding that matches the token. Leave the block empty inside GitHub Actions to use the job's ID token, which needs the id-token: write permission. (see [below for nested schema](#nestedblock--workload_identity))
 
 ### Nested Schema for `workload_identity`

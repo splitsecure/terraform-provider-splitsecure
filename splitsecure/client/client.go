@@ -24,8 +24,6 @@ type Config struct {
 	Key     *authn.Key
 	// Workload signs in with an external OIDC token instead of Key.
 	Workload *authn.Workload
-	// Base is the optional RoundTripper under the auth transport.
-	Base http.RoundTripper
 }
 
 // Client wraps the SplitSecure Connect RPC clients plus the provider-level
@@ -44,20 +42,12 @@ func New(cfg Config) (*Client, error) {
 
 	// One transport, so every client shares the service token and the DPoP
 	// key it is bound to.
-	// The token exchanges go to the same deployment, so they trust the same
-	// roots as the API requests.
-	var exchangeClient *http.Client
-	if cfg.Base != nil {
-		exchangeClient = &http.Client{Timeout: 30 * time.Second, Transport: cfg.Base}
-	}
 	auth, err := authn.NewTransport(authn.Config{
-		Endpoint:       cfg.Endpoint,
-		Key:            cfg.Key,
-		Workload:       cfg.Workload,
-		Base:           cfg.Base,
-		ExchangeClient: exchangeClient,
-		Organization:   cfg.OrgS2R,
-		UserAgent:      userAgent,
+		Endpoint:     cfg.Endpoint,
+		Key:          cfg.Key,
+		Workload:     cfg.Workload,
+		Organization: cfg.OrgS2R,
+		UserAgent:    userAgent,
 	})
 	if err != nil {
 		return nil, err
