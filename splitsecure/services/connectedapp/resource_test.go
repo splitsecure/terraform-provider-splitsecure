@@ -34,6 +34,8 @@ const (
 	emailFormat = "urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress"
 	entityID    = "urn:amazon:webservices"
 	acsURL      = "https://signin.aws.amazon.com/saml"
+	// derivedSubject has the shape of a subject the enclave derives: 64 lowercase hex characters.
+	derivedSubject = "3f7a9c0d1e2b4a6c8d0e1f2a3b4c5d6e7f8091a2b3c4d5e6f708192a3b4c5d6e"
 )
 
 var errGone = errors.New("gone")
@@ -100,7 +102,7 @@ func model(t *testing.T, template string, fields ...fieldModel) appModel {
 	null := types.StringNull()
 
 	return appModel{
-		ID: unknown, VaultID: unknown, Title: unknown, Sensitivity: unknown,
+		ID: unknown, VaultID: unknown, Title: unknown, Sensitivity: unknown, DerivedValues: types.MapUnknown(types.StringType),
 		IssuerVaultID:      types.StringValue("vault-1"),
 		IssuerID:           types.StringValue("issuer-1"),
 		Template:           types.StringValue(template),
@@ -273,7 +275,7 @@ func TestConnectedAppSchema(t *testing.T) {
 		}
 	}
 
-	for _, name := range []string{"id", "vault_id", "title"} {
+	for _, name := range []string{"id", "vault_id", "title", "derived_values"} {
 		if a := s.Attributes[name]; !a.IsComputed() || a.IsOptional() {
 			t.Errorf("attribute %q should be computed only", name)
 		}
@@ -336,7 +338,7 @@ func TestConnectedAppCreatesSAML2AWS(t *testing.T) {
 				App:     samlAWSParams(t),
 				Options: &vaultusev1.WriteOptions{Justification: "because", Wait: durationpb.New(10e9)},
 			})
-			assertCreatedState(t, state, "AWS (SAML)")
+			assertCreatedState(t, state, "AWS (SAML)", map[string]string{})
 			readAndDelete(t, r, state)
 
 			if deleted.GetBase().GetSecretId() != "node-1" || deleted.GetBase().GetVaultId() != "vault-1" {
@@ -346,7 +348,7 @@ func TestConnectedAppCreatesSAML2AWS(t *testing.T) {
 	}
 }
 
-func assertCreatedState(t *testing.T, state tfsdk.State, title string) {
+func assertCreatedState(t *testing.T, state tfsdk.State, title string, derived map[string]string) {
 	t.Helper()
 
 	var got appModel
@@ -357,6 +359,11 @@ func assertCreatedState(t *testing.T, state tfsdk.State, title string) {
 
 	if got.ID.ValueString() != "node-1" || got.VaultID.ValueString() != "vault-1" || got.Title.ValueString() != title {
 		t.Errorf("id, vault_id, title = %v, %v, %v", got.ID, got.VaultID, got.Title)
+	}
+
+	wantDerived, diags := types.MapValueFrom(context.Background(), types.StringType, derived)
+	if diags.HasError() || !got.DerivedValues.Equal(wantDerived) {
+		t.Errorf("derived_values = %v, want %v", got.DerivedValues, derived)
 	}
 
 	if len(got.Fields.Elements()) == 0 {
@@ -397,14 +404,29 @@ func TestConnectedAppCreatesOIDCAWS(t *testing.T) {
 
 	var created *vaultusev1.CreateConnectedAppRequest
 
-	use := &vaultfake.Use{OnCreateConnectedApp: func(req *vaultusev1.CreateConnectedAppRequest) (*vaultusev1.CreateConnectedAppResponse, error) {
-		created = req
+	use := &vaultfake.Use{
+		OnCreateConnectedApp: func(req *vaultusev1.CreateConnectedAppRequest) (*vaultusev1.CreateConnectedAppResponse, error) {
+			created = req
 
-		return &vaultusev1.CreateConnectedAppResponse{Outcome: vaultfake.CreateOutcome(false, "node-1")}, nil
-	}}
-	record := &pb.ConnectedAppParams{Template: "oidc/aws", Title: "AWS (OIDC)", App: &pb.ConnectedAppParams_Oidc{Oidc: &pb.OIDCApp{
-		Binding: &pb.OIDCBinding{KeyId: keyID},
-	}}}
+			return &vaultusev1.CreateConnectedAppResponse{Outcome: vaultfake.CreateOutcome(false, "node-1")}, nil
+		},
+		OnDelete: func(*vaultusev1.DeleteRequest) (*vaultusev1.DeleteResponse, error) {
+			return &vaultusev1.DeleteResponse{Outcome: vaultfake.DeleteOutcome(false)}, nil
+		},
+	}
+
+	// As the stored record: the subject derived at creation, held as text.
+	record := &pb.ConnectedAppParams{
+		Template: "oidc/aws",
+		Title:    "AWS (OIDC)",
+		App:      &pb.ConnectedAppParams_Oidc{Oidc: &pb.OIDCApp{Binding: &pb.OIDCBinding{KeyId: keyID}}},
+		Fields: []*pb.Field{
+			{Name: "subject", Label: "Subject", Type: &pb.Field_StringField{StringField: &pb.StringField{
+				Source: &pb.StringField_DerivedText{DerivedText: &pb.DerivedText{Value: derivedSubject}},
+			}}},
+			catalog.DerivedString("token_id", pb.Derived_DERIVED_PER_SIGN_IN_ID),
+		},
+	}
 	r := &appResource{client: newClient(t, use, &vaultfake.Browse{OnGetRecord: recordHandler(t, record)})}
 
 	state, err := create(t, r, m)
@@ -420,7 +442,8 @@ func TestConnectedAppCreatesOIDCAWS(t *testing.T) {
 	}
 
 	assertProtoEqual(t, created.GetBase().GetApp(), want)
-	assertCreatedState(t, state, "AWS (OIDC)")
+	assertCreatedState(t, state, "AWS (OIDC)", map[string]string{"subject": derivedSubject})
+	readAndDelete(t, r, state)
 }
 
 func TestConnectedAppReadRemovesGoneRecord(t *testing.T) {
@@ -436,6 +459,7 @@ func TestConnectedAppReadRemovesGoneRecord(t *testing.T) {
 	m.ID = types.StringValue("node-1")
 	m.VaultID = types.StringValue("vault-1")
 	m.Title = types.StringValue("AWS (SAML)")
+	m.DerivedValues = types.MapValueMust(types.StringType, map[string]attr.Value{})
 	m.Sensitivity = types.StringValue("")
 	state := stateOf(t, &m)
 
@@ -452,6 +476,7 @@ func validate(t *testing.T, m appModel) []string {
 
 	// A config holds null, not unknown, where only the provider sets a value.
 	m.ID, m.VaultID, m.Title, m.Sensitivity = types.StringNull(), types.StringNull(), types.StringNull(), types.StringNull()
+	m.DerivedValues = types.MapNull(types.StringType)
 
 	resp := &resource.ValidateConfigResponse{}
 	(&appResource{}).ValidateConfig(context.Background(), resource.ValidateConfigRequest{Config: configOf(t, &m)}, resp)

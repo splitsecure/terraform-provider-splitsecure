@@ -16,6 +16,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/listplanmodifier"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema/mapplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/schema/validator"
 	"github.com/hashicorp/terraform-plugin-framework/types"
@@ -52,6 +53,7 @@ type appModel struct {
 	IssuerID           types.String `tfsdk:"issuer_id"`
 	Template           types.String `tfsdk:"template"`
 	Title              types.String `tfsdk:"title"`
+	DerivedValues      types.Map    `tfsdk:"derived_values"`
 	Name               types.String `tfsdk:"name"`
 	Description        types.String `tfsdk:"description"`
 	NotificationPolicy types.String `tfsdk:"notification_policy"`
@@ -171,6 +173,14 @@ func (r *appResource) Schema(_ context.Context, _ resource.SchemaRequest, resp *
 		Computed:      true,
 		Description:   "Display name of the template.",
 		PlanModifiers: vaultres.ComputedOnce(),
+	}
+	attrs["derived_values"] = schema.MapAttribute{
+		ElementType: types.StringType,
+		Computed:    true,
+		Description: "Values the enclave derived when it created the app, by field name. For oidc/aws, subject is the sub claim the role's trust policy must match.",
+		PlanModifiers: []planmodifier.Map{
+			mapplanmodifier.UseStateForUnknown(),
+		},
 	}
 
 	resp.Schema = schema.Schema{
@@ -503,6 +513,7 @@ func populate(ctx context.Context, m *appModel, rec *vaultapi.Record) error {
 	// A template that differs from the record's plans a replacement.
 	m.Template = types.StringValue(app.GetTemplate())
 	m.Title = types.StringValue(app.GetTitle())
+	m.DerivedValues = derivedValues(&app)
 
 	if m.IssuerVaultID.IsNull() {
 		m.IssuerVaultID = m.VaultID
@@ -565,4 +576,17 @@ func emptyIfNull(l types.List, elem attr.Type) types.List {
 	}
 
 	return types.ListValueMust(elem, []attr.Value{})
+}
+
+// derivedValues maps each text field the enclave derived at creation to its value.
+func derivedValues(app *pb.ConnectedAppParams) types.Map {
+	values := map[string]attr.Value{}
+
+	for _, f := range app.GetFields() {
+		if derived := f.GetStringField().GetDerivedText(); derived != nil {
+			values[f.GetName()] = types.StringValue(derived.GetValue())
+		}
+	}
+
+	return types.MapValueMust(types.StringType, values)
 }

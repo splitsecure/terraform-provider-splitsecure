@@ -126,6 +126,7 @@ resource "splitsecure_connected_app" "aws_ops" {
 
 ### Read-Only
 
+- `derived_values` (Map of String) Values the enclave derived when it created the app, by field name. For oidc/aws, subject is the sub claim the role's trust policy must match.
 - `id` (String) Record id in the vault. Also the import id as vault_id/id.
 - `title` (String) Display name of the template.
 - `vault_id` (String) Vault the connected app lives in, the vault of its issuer.
