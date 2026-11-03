@@ -14,11 +14,14 @@ SAML2 identity provider in a SplitSecure vault. Creating or deleting it may need
 
 ```terraform
 data "splitsecure_vault" "platform" {
-  label = "platform"
+  name = "platform"
 }
 
 resource "splitsecure_saml2_identity_provider" "aws_console" {
   vault_id = data.splitsecure_vault.platform.id
+
+  # Created when missing, like mkdir -p. Unset places the record at the vault root.
+  folder = ["terraform", "prod"]
 
   name        = "platform-engineering/aws-123456789012"
   description = "SAML IdP fronting AWS account 123456789012."
@@ -49,11 +52,11 @@ resource "aws_iam_saml_provider" "splitsecure" {
 > **NOTE**: [Write-only arguments](https://developer.hashicorp.com/terraform/language/resources/ephemeral#write-only-arguments) are supported in Terraform 1.11 and later.
 
 - `description` (String) Free-form description. Changing it replaces the resource.
+- `folder` (List of String) Folder path from the vault root to place the identity provider in, for example ["terraform", "prod"]. Missing folders are created. Unset places it at the vault root. Changing it replaces the resource.
 - `justification` (String, [Write-only](https://developer.hashicorp.com/terraform/language/resources/ephemeral#write-only-arguments)) Justification shown to approvers when the create needs approval. Write-only and never stored in state.
 - `not_after` (String) End of the signing certificate validity, as an RFC 3339 timestamp. Defaults to the server's choice. Changing it replaces the resource.
 - `not_before` (String) Start of the signing certificate validity, as an RFC 3339 timestamp. Defaults to the server's choice. Changing it replaces the resource.
 - `notification_policy` (String) Who is notified about requests against the identity provider. One of: notify_everyone, allow_selective_notifications. Changing it replaces the resource.
-- `parent_node_id` (String) Folder node id to place the identity provider under. Empty means the vault root. Changing it replaces the resource.
 - `sensitivity` (String) Sensitivity level of the identity provider. One of: low, medium, high, critical. Changing it replaces the resource.
 - `wait` (String, [Write-only](https://developer.hashicorp.com/terraform/language/resources/ephemeral#write-only-arguments)) How long the server holds the create open for approval before Terraform starts polling, as a Go duration such as "30s". Defaults to 0. Write-only and never stored in state.
 

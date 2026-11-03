@@ -14,11 +14,14 @@ OIDC issuer in a SplitSecure vault, backed by a workload identity authority. Cre
 
 ```terraform
 data "splitsecure_vault" "platform" {
-  label = "platform"
+  name = "platform"
 }
 
 resource "splitsecure_oidc_issuer" "ci" {
   vault_id = data.splitsecure_vault.platform.id
+
+  # Created when missing, like mkdir -p. Unset places the record at the vault root.
+  folder = ["terraform", "prod"]
 
   name        = "ci"
   description = "Issues identity tokens to CI workloads."
@@ -50,9 +53,9 @@ output "ci_issuer" {
 - `algs` (List of String) Signing algorithms the issuer publishes keys for. Leave unset for the default key set. Changing it replaces the resource.
 - `allow_free_form_tokens` (Boolean) Whether the issuer may mint tokens with caller-chosen claims. Changing it replaces the resource.
 - `description` (String) Free-form description. Changing it replaces the resource.
+- `folder` (List of String) Folder path from the vault root to place the OIDC issuer in, for example ["terraform", "prod"]. Missing folders are created. Unset places it at the vault root. Changing it replaces the resource.
 - `justification` (String, [Write-only](https://developer.hashicorp.com/terraform/language/resources/ephemeral#write-only-arguments)) Justification shown to approvers when the create needs approval. Write-only and never stored in state.
 - `notification_policy` (String) Who is notified about requests against the OIDC issuer. One of: notify_everyone, allow_selective_notifications. Changing it replaces the resource.
-- `parent_node_id` (String) Folder node id to place the OIDC issuer under. Empty means the vault root. Changing it replaces the resource.
 - `sensitivity` (String) Sensitivity level of the OIDC issuer. One of: low, medium, high, critical. Changing it replaces the resource.
 - `wait` (String, [Write-only](https://developer.hashicorp.com/terraform/language/resources/ephemeral#write-only-arguments)) How long the server holds the create open for approval before Terraform starts polling, as a Go duration such as "30s". Defaults to 0. Write-only and never stored in state.
 

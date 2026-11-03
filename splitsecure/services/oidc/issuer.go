@@ -13,6 +13,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework-validators/listvalidator"
 	"github.com/hashicorp/terraform-plugin-framework-validators/stringvalidator"
 	"github.com/hashicorp/terraform-plugin-framework/attr"
+	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
@@ -50,7 +51,7 @@ type issuerModel struct {
 	Description        types.String `tfsdk:"description"`
 	NotificationPolicy types.String `tfsdk:"notification_policy"`
 	Sensitivity        types.String `tfsdk:"sensitivity"`
-	ParentNodeID       types.String `tfsdk:"parent_node_id"`
+	Folder             types.List   `tfsdk:"folder"`
 	Justification      types.String `tfsdk:"justification"`
 	Wait               types.String `tfsdk:"wait"`
 	Algs               types.List   `tfsdk:"algs"`
@@ -161,28 +162,17 @@ func (r *issuerResource) Create(ctx context.Context, req resource.CreateRequest,
 		return
 	}
 
-	var algNames []string
-
-	resp.Diagnostics.Append(plan.Algs.ElementsAs(ctx, &algNames, false)...)
-
-	if resp.Diagnostics.HasError() {
+	algs, ok := signatureSpecs(ctx, plan.Algs, &resp.Diagnostics)
+	if !ok {
 		return
 	}
 
-	algs := make([]*keysv1.SignatureSpec, 0, len(algNames))
-
-	for _, name := range algNames {
-		spec, err := vaultapi.SignatureSpecFromAlg(name)
-		if err != nil {
-			resp.Diagnostics.AddAttributeError(path.Root("algs"), "Invalid algorithm", err.Error())
-
-			return
-		}
-
-		algs = append(algs, spec)
-	}
-
 	vaultID := plan.VaultID.ValueString()
+
+	parentID, ok := vaultres.EnsureFolder(ctx, r.client.VaultBrowse, vaultID, plan.Folder, &resp.Diagnostics)
+	if !ok {
+		return
+	}
 
 	created, err := r.client.VaultUse.CreateWIFAuthority(ctx, connect.NewRequest(&vaultusev1.CreateWIFAuthorityRequest{
 		Base: &vaultusev1.CreateWIFAuthorityRequest_Base{
@@ -192,7 +182,7 @@ func (r *issuerResource) Create(ctx context.Context, req resource.CreateRequest,
 				Description:        plan.Description.ValueString(),
 				NotificationPolicy: plan.NotificationPolicy.ValueString(),
 				Sensitivity:        plan.Sensitivity.ValueString(),
-				ParentNodeID:       plan.ParentNodeID.ValueString(),
+				ParentNodeID:       parentID,
 			}),
 			Algs:                algs,
 			Options:             opts,
@@ -398,4 +388,29 @@ func publishedKeyFor(authority *wifv2.WorkloadIdentityAuthorityState, publicKey 
 	}
 
 	return nil
+}
+
+func signatureSpecs(ctx context.Context, algs types.List, diags *diag.Diagnostics) ([]*keysv1.SignatureSpec, bool) {
+	var names []string
+
+	diags.Append(algs.ElementsAs(ctx, &names, false)...)
+
+	if diags.HasError() {
+		return nil, false
+	}
+
+	specs := make([]*keysv1.SignatureSpec, 0, len(names))
+
+	for _, name := range names {
+		spec, err := vaultapi.SignatureSpecFromAlg(name)
+		if err != nil {
+			diags.AddAttributeError(path.Root("algs"), "Invalid algorithm", err.Error())
+
+			return nil, false
+		}
+
+		specs = append(specs, spec)
+	}
+
+	return specs, true
 }

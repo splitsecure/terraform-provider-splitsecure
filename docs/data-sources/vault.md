@@ -3,25 +3,25 @@
 page_title: "splitsecure_vault Data Source - SplitSecure"
 subcategory: ""
 description: |-
-  Resolves a vault by label or by id. Set exactly one of them. A label lookup errors when no vault or more than one vault has the label.
+  Resolves a vault by name or by id. Set exactly one of them. A name lookup errors when no vault or more than one vault has the name.
 ---
 
 # splitsecure_vault (Data Source)
 
-Resolves a vault by label or by id. Set exactly one of them. A label lookup errors when no vault or more than one vault has the label.
+Resolves a vault by name or by id. Set exactly one of them. A name lookup errors when no vault or more than one vault has the name.
 
 ## Example Usage
 
 ```terraform
-# Resolve a vault by its label in the provider's org. The lookup errors
-# when no vault, or more than one vault, has the label.
+# Resolve a vault by its name in the provider's org. The lookup errors
+# when no vault, or more than one vault, has the name.
 data "splitsecure_vault" "platform" {
-  label = "platform"
+  name = "platform"
 }
 
 # Search another org.
 data "splitsecure_vault" "other" {
-  label   = "platform"
+  name    = "platform"
   org_s2r = "s2r:us:org:..."
 }
 ```
@@ -31,14 +31,12 @@ data "splitsecure_vault" "other" {
 
 ### Optional
 
-- `folder` (List of String) Folder path as labels from the vault root, for example ["terraform"]. Errors when the path does not resolve.
-- `id` (String) Vault id. Use it as the vault_id of vault resources. Set exactly one of label and id.
-- `label` (String) Label of the vault to resolve. Set exactly one of label and id.
+- `id` (String) Vault id. Use it as the vault_id of vault resources. Set exactly one of name and id.
+- `name` (String) Name of the vault to resolve. Set exactly one of name and id.
 - `org_s2r` (String) Org s2r URI to search. Defaults to the provider's org_s2r.
 
 ### Read-Only
 
 - `custody_class` (String) Custody class of the vault: "threshold", "online" or "blind".
-- `node_id` (String) Node id of the folder. Null when folder is unset. Use it as parent_node_id of vault resources.
 - `status` (String) Status of the vault: "active" or "sealed".
 - `team_ids` (List of String) Base64-encoded ids of the teams that hold the vault.

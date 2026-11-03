@@ -5,6 +5,9 @@ data "splitsecure_vault" "platform" {
 resource "splitsecure_oidc_issuer" "ci" {
   vault_id = data.splitsecure_vault.platform.id
 
+  # Created when missing, like mkdir -p. Unset places the record at the vault root.
+  folder = ["terraform", "prod"]
+
   name        = "ci"
   description = "Issues identity tokens to CI workloads."
 

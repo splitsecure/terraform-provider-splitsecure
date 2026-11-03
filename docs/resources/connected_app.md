@@ -24,7 +24,7 @@ variable "aws_saml_provider_arn" {
 }
 
 data "splitsecure_vault" "platform" {
-  label = "platform"
+  name = "platform"
 }
 
 resource "splitsecure_saml2_identity_provider" "aws_console" {
@@ -34,6 +34,7 @@ resource "splitsecure_saml2_identity_provider" "aws_console" {
 
 resource "splitsecure_connected_app" "aws_ops" {
   issuer_vault_id = data.splitsecure_vault.platform.id
+  folder          = ["terraform", "prod"]
   issuer_id       = splitsecure_saml2_identity_provider.aws_console.id
   template        = "saml2/aws"
 
@@ -114,11 +115,11 @@ resource "splitsecure_connected_app" "aws_ops" {
 
 - `description` (String) Free-form description. Changing it replaces the resource.
 - `field` (Block List) One field of the template. Set exactly one of value, values, seconds, duration_range, choices or default_value, requester, derived and json. Changing any field replaces the resource. (see [below for nested schema](#nestedblock--field))
+- `folder` (List of String) Folder path from the vault root to place the connected app in, for example ["terraform", "prod"]. Missing folders are created. Unset places it at the vault root. Changing it replaces the resource.
 - `justification` (String, [Write-only](https://developer.hashicorp.com/terraform/language/resources/ephemeral#write-only-arguments)) Justification shown to approvers when the create needs approval. Write-only and never stored in state.
 - `name_id` (Block List) NameID of a SAML2 app, built from parts. Replaces the template's name_id field wherever the layout places it. Changing it replaces the resource. (see [below for nested schema](#nestedblock--name_id))
 - `notification_policy` (String) Who is notified about requests against the connected app. One of: notify_everyone, allow_selective_notifications. Changing it replaces the resource.
 - `oidc` (Block List) Signing key of an OIDC template. Set this block or saml2, not both. Changing it replaces the resource. (see [below for nested schema](#nestedblock--oidc))
-- `parent_node_id` (String) Folder node id to place the connected app under. Empty means the vault root. Changing it replaces the resource.
 - `saml2` (Block List) Service provider of a SAML2 template. Set this block or oidc, not both. Changing it replaces the resource. (see [below for nested schema](#nestedblock--saml2))
 - `sensitivity` (String) Sensitivity level of the connected app. One of: low, medium, high, critical. Changing it replaces the resource.
 - `wait` (String, [Write-only](https://developer.hashicorp.com/terraform/language/resources/ephemeral#write-only-arguments)) How long the server holds the create open for approval before Terraform starts polling, as a Go duration such as "30s". Defaults to 0. Write-only and never stored in state.

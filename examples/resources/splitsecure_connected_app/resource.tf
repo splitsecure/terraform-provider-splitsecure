@@ -19,6 +19,7 @@ resource "splitsecure_saml2_identity_provider" "aws_console" {
 
 resource "splitsecure_connected_app" "aws_ops" {
   issuer_vault_id = data.splitsecure_vault.platform.id
+  folder          = ["terraform", "prod"]
   issuer_id       = splitsecure_saml2_identity_provider.aws_console.id
   template        = "saml2/aws"
 

@@ -5,6 +5,9 @@ data "splitsecure_vault" "platform" {
 resource "splitsecure_saml2_identity_provider" "aws_console" {
   vault_id = data.splitsecure_vault.platform.id
 
+  # Created when missing, like mkdir -p. Unset places the record at the vault root.
+  folder = ["terraform", "prod"]
+
   name        = "platform-engineering/aws-123456789012"
   description = "SAML IdP fronting AWS account 123456789012."
 

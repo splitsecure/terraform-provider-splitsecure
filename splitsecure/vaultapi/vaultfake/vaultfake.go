@@ -111,6 +111,7 @@ type Browse struct {
 	OnGetRecord     func(*vaultbrowsev1.GetRecordRequest) (*vaultbrowsev1.GetRecordResponse, error)
 	OnListNodes     func(*vaultbrowsev1.ListNodesRequest) (*vaultbrowsev1.ListNodesResponse, error)
 	OnDescribeVault func(*vaultbrowsev1.DescribeVaultRequest) (*vaultbrowsev1.DescribeVaultResponse, error)
+	OnCreateFolder  func(*vaultbrowsev1.CreateFolderRequest) (*vaultbrowsev1.CreateFolderResponse, error)
 }
 
 // GetRecord implements vaultbrowsev1connect.VaultBrowseServiceHandler.
@@ -289,6 +290,20 @@ func (u *Use) Cancel(ctx context.Context, req *connect.Request[vaultusev1.Cancel
 	}
 
 	resp, err := u.OnCancel(req.Msg)
+	if err != nil {
+		return nil, err
+	}
+
+	return connect.NewResponse(resp), nil
+}
+
+// CreateFolder implements vaultbrowsev1connect.VaultBrowseServiceHandler.
+func (b *Browse) CreateFolder(ctx context.Context, req *connect.Request[vaultbrowsev1.CreateFolderRequest]) (*connect.Response[vaultbrowsev1.CreateFolderResponse], error) {
+	if b.OnCreateFolder == nil {
+		return b.UnimplementedVaultBrowseServiceHandler.CreateFolder(ctx, req)
+	}
+
+	resp, err := b.OnCreateFolder(req.Msg)
 	if err != nil {
 		return nil, err
 	}

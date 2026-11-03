@@ -107,7 +107,7 @@ func model(t *testing.T, template string, fields ...fieldModel) appModel {
 		Name:               types.StringValue("aws-prod"),
 		Description:        types.StringValue(""),
 		NotificationPolicy: types.StringValue(vaultapi.NotificationPolicyNotifyEveryone),
-		ParentNodeID:       null, Justification: null, Wait: null,
+		Folder:             types.ListNull(types.StringType), Justification: null, Wait: null,
 		SAML2:  list[saml2Model](t, saml2Type(), nil),
 		OIDC:   list[oidcModel](t, oidcType(), nil),
 		Fields: list(t, fieldType(), fields),
@@ -650,5 +650,39 @@ func assertImportedState(t *testing.T, state tfsdk.State) {
 
 	if len(got.OIDC.Elements()) != 0 {
 		t.Errorf("oidc block = %v, want none", got.OIDC)
+	}
+}
+
+func TestConnectedAppPlacesRecordInCreatedFolder(t *testing.T) {
+	t.Parallel()
+
+	var created *vaultusev1.CreateConnectedAppRequest
+
+	use := &vaultfake.Use{
+		OnCreateConnectedApp: func(req *vaultusev1.CreateConnectedAppRequest) (*vaultusev1.CreateConnectedAppResponse, error) {
+			created = req
+
+			return &vaultusev1.CreateConnectedAppResponse{Outcome: vaultfake.CreateOutcome(false, "node-1")}, nil
+		},
+	}
+
+	browse := &vaultfake.Browse{OnGetRecord: recordHandler(t, samlRecord())}
+	tree := &vaultfake.FolderTree{Existing: map[string]string{"terraform": "id-terraform"}}
+	tree.Attach(browse)
+
+	m := samlAWSModel(t)
+	m.Folder = types.ListValueMust(types.StringType, []attr.Value{types.StringValue("terraform"), types.StringValue("prod")})
+
+	_, err := create(t, &appResource{client: newClient(t, use, browse)}, m)
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+
+	if created.GetBase().GetCommon().GetRequestedParentNodeId() != "new-prod" {
+		t.Errorf("parent = %q, want new-prod", created.GetBase().GetCommon().GetRequestedParentNodeId())
+	}
+
+	if !slices.Equal(tree.Created(), []string{"prod"}) || !slices.Equal(tree.Parents(), []string{"id-terraform"}) {
+		t.Errorf("folders created %v under %v", tree.Created(), tree.Parents())
 	}
 }

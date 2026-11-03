@@ -56,7 +56,7 @@ type appModel struct {
 	Description        types.String `tfsdk:"description"`
 	NotificationPolicy types.String `tfsdk:"notification_policy"`
 	Sensitivity        types.String `tfsdk:"sensitivity"`
-	ParentNodeID       types.String `tfsdk:"parent_node_id"`
+	Folder             types.List   `tfsdk:"folder"`
 	Justification      types.String `tfsdk:"justification"`
 	Wait               types.String `tfsdk:"wait"`
 	SAML2              types.List   `tfsdk:"saml2"`
@@ -341,6 +341,11 @@ func (r *appResource) Create(ctx context.Context, req resource.CreateRequest, re
 
 	vaultID := plan.IssuerVaultID.ValueString()
 
+	parentID, ok := vaultres.EnsureFolder(ctx, r.client.VaultBrowse, vaultID, plan.Folder, &resp.Diagnostics)
+	if !ok {
+		return
+	}
+
 	created, err := r.client.VaultUse.CreateConnectedApp(ctx, connect.NewRequest(&vaultusev1.CreateConnectedAppRequest{
 		Base: &vaultusev1.CreateConnectedAppRequest_Base{
 			VaultId:  vaultID,
@@ -350,7 +355,7 @@ func (r *appResource) Create(ctx context.Context, req resource.CreateRequest, re
 				Description:        plan.Description.ValueString(),
 				NotificationPolicy: plan.NotificationPolicy.ValueString(),
 				Sensitivity:        plan.Sensitivity.ValueString(),
-				ParentNodeID:       plan.ParentNodeID.ValueString(),
+				ParentNodeID:       parentID,
 			}),
 			App:     app,
 			Options: opts,

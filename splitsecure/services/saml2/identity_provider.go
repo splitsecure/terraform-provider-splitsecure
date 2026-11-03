@@ -44,7 +44,7 @@ type saml2IdentityProviderModel struct {
 	NotAfter              types.String `tfsdk:"not_after"`
 	NotificationPolicy    types.String `tfsdk:"notification_policy"`
 	Sensitivity           types.String `tfsdk:"sensitivity"`
-	ParentNodeID          types.String `tfsdk:"parent_node_id"`
+	Folder                types.List   `tfsdk:"folder"`
 	Justification         types.String `tfsdk:"justification"`
 	Wait                  types.String `tfsdk:"wait"`
 	ProviderID            types.String `tfsdk:"provider_id"`
@@ -129,6 +129,11 @@ func (r *saml2IdentityProvider) Create(ctx context.Context, req resource.CreateR
 		return
 	}
 
+	parentID, ok := vaultres.EnsureFolder(ctx, r.client.VaultBrowse, plan.VaultID.ValueString(), plan.Folder, &resp.Diagnostics)
+	if !ok {
+		return
+	}
+
 	base := &vaultusev1.CreateSAML2IDPRequest_Base{
 		VaultId: plan.VaultID.ValueString(),
 		Common: vaultapi.CreateCommon(vaultapi.CreateCommonInput{
@@ -136,7 +141,7 @@ func (r *saml2IdentityProvider) Create(ctx context.Context, req resource.CreateR
 			Description:        plan.Description.ValueString(),
 			NotificationPolicy: plan.NotificationPolicy.ValueString(),
 			Sensitivity:        plan.Sensitivity.ValueString(),
-			ParentNodeID:       plan.ParentNodeID.ValueString(),
+			ParentNodeID:       parentID,
 		}),
 		Options: opts,
 	}

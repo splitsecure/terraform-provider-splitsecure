@@ -3,11 +3,13 @@ package saml2
 import (
 	"context"
 	"errors"
+	"slices"
 	"strings"
 	"testing"
 	"time"
 
 	"connectrpc.com/connect"
+	"github.com/hashicorp/terraform-plugin-framework/attr"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/tfsdk"
 	"github.com/hashicorp/terraform-plugin-framework/types"
@@ -30,7 +32,7 @@ func idpPlan() saml2IdentityProviderModel {
 		NotBefore:             unknown,
 		NotAfter:              unknown,
 		NotificationPolicy:    types.StringValue("notify_everyone"),
-		ParentNodeID:          types.StringValue("folder-1"),
+		Folder:                types.ListValueMust(types.StringType, []attr.Value{types.StringValue("terraform"), types.StringValue("prod")}),
 		Sensitivity:           unknown,
 		Justification:         types.StringNull(),
 		Wait:                  types.StringNull(),
@@ -117,9 +119,13 @@ func TestIDPLifecycle(t *testing.T) {
 				deleted *vaultusev1.DeleteRequest
 			)
 
+			browse := &vaultfake.Browse{OnGetRecord: idpRecordHandler(t)}
+			tree := &vaultfake.FolderTree{Existing: map[string]string{"terraform": "id-terraform"}}
+			tree.Attach(browse)
+
 			c := vaultfake.New(t, vaultfake.Handlers{
 				Use:    idpUse(viaTicket, &created, &deleted),
-				Browse: &vaultfake.Browse{OnGetRecord: idpRecordHandler(t)},
+				Browse: browse,
 			})
 
 			r := &saml2IdentityProvider{client: c}
@@ -127,6 +133,10 @@ func TestIDPLifecycle(t *testing.T) {
 
 			state := createIDP(ctx, t, r)
 			assertIDPCreateRequest(t, created)
+
+			if !slices.Equal(tree.Created(), []string{"prod"}) || !slices.Equal(tree.Parents(), []string{"id-terraform"}) {
+				t.Errorf("folders created %v under %v, want prod under the existing terraform folder", tree.Created(), tree.Parents())
+			}
 
 			var got saml2IdentityProviderModel
 
@@ -162,7 +172,7 @@ func assertIDPCreateRequest(t *testing.T, req *vaultusev1.CreateSAML2IDPRequest)
 
 	base := req.GetBase()
 
-	if base.GetVaultId() != "vault-1" || base.GetCommon().GetName() != "aws" || base.GetCommon().GetRequestedParentNodeId() != "folder-1" {
+	if base.GetVaultId() != "vault-1" || base.GetCommon().GetName() != "aws" || base.GetCommon().GetRequestedParentNodeId() != "new-prod" {
 		t.Errorf("create request = %v", req)
 	}
 

@@ -9,7 +9,6 @@ import (
 	"strings"
 
 	"connectrpc.com/connect"
-	"github.com/hashicorp/terraform-plugin-framework-validators/listvalidator"
 	"github.com/hashicorp/terraform-plugin-framework-validators/stringvalidator"
 	"github.com/hashicorp/terraform-plugin-framework/datasource"
 	"github.com/hashicorp/terraform-plugin-framework/datasource/schema"
@@ -30,9 +29,8 @@ var _ datasource.DataSource = (*vaultDataSource)(nil)
 const listVaultsPageSize = 100
 
 var (
-	errVaultNotFound  = errors.New("no vault matches")
-	errVaultAmbig     = errors.New("more than one vault matches")
-	errFolderNotFound = errors.New("folder does not resolve")
+	errVaultNotFound = errors.New("no vault matches")
+	errVaultAmbig    = errors.New("more than one vault matches")
 )
 
 type vaultDataSource struct {
@@ -46,8 +44,6 @@ type vaultDataSourceModel struct {
 	CustodyClass types.String `tfsdk:"custody_class"`
 	Status       types.String `tfsdk:"status"`
 	TeamIDs      types.List   `tfsdk:"team_ids"`
-	Folder       types.List   `tfsdk:"folder"`
-	NodeID       types.String `tfsdk:"node_id"`
 }
 
 // NewVaultDataSource returns a factory for the splitsecure_vault data source.
@@ -95,16 +91,6 @@ func (d *vaultDataSource) Schema(_ context.Context, _ datasource.SchemaRequest, 
 				Computed:    true,
 				Description: `Status of the vault: "active" or "sealed".`,
 			},
-			"folder": schema.ListAttribute{
-				ElementType: types.StringType,
-				Optional:    true,
-				Description: "Folder path as labels from the vault root, for example [\"terraform\"]. Errors when the path does not resolve.",
-				Validators:  []validator.List{listvalidator.SizeAtLeast(1)},
-			},
-			"node_id": schema.StringAttribute{
-				Computed:    true,
-				Description: "Node id of the folder. Null when folder is unset. Use it as parent_node_id of vault resources.",
-			},
 			"team_ids": schema.ListAttribute{
 				ElementType: types.StringType,
 				Computed:    true,
@@ -120,7 +106,6 @@ type vaultMatch struct {
 	Name      string
 	Summary   *vaultcatalogv1.VaultSummary
 	Described *vaultbrowsev1.DescribeVaultResponse
-	Shared    []*vaultcatalogv1.SharedNode
 }
 
 func (d *vaultDataSource) Read(ctx context.Context, req datasource.ReadRequest, resp *datasource.ReadResponse) {
@@ -149,32 +134,8 @@ func (d *vaultDataSource) Read(ctx context.Context, req datasource.ReadRequest, 
 	config.CustodyClass = types.StringNull()
 	config.Status = types.StringNull()
 	config.TeamIDs = types.ListNull(types.StringType)
-	config.NodeID = types.StringNull()
 
 	resp.Diagnostics.Append(applyMatch(ctx, &config, match)...)
-
-	if !config.Folder.IsNull() && !config.Folder.IsUnknown() {
-		var segments []string
-
-		resp.Diagnostics.Append(config.Folder.ElementsAs(ctx, &segments, false)...)
-
-		if resp.Diagnostics.HasError() {
-			return
-		}
-
-		nodeID, err := d.resolveFolderIn(ctx, match, segments)
-		if err != nil {
-			resp.Diagnostics.AddError("Resolving folder", fmt.Sprintf("path %q: %s", segments, err))
-
-			return
-		}
-
-		config.NodeID = types.StringValue(nodeID)
-	}
-
-	if resp.Diagnostics.HasError() {
-		return
-	}
 
 	resp.Diagnostics.Append(resp.State.Set(ctx, &config)...)
 }
@@ -197,13 +158,10 @@ func (d *vaultDataSource) findByName(ctx context.Context, orgS2R, name string) (
 			return
 		}
 
-		m, ok := found[n.GetVaultId()]
+		_, ok := found[n.GetVaultId()]
 		if !ok {
-			m = &vaultMatch{VaultID: n.GetVaultId(), Name: n.GetVaultLabel()}
-			found[n.GetVaultId()] = m
+			found[n.GetVaultId()] = &vaultMatch{VaultID: n.GetVaultId(), Name: n.GetVaultLabel()}
 		}
-
-		m.Shared = append(m.Shared, n)
 	})
 	if err != nil {
 		return nil, err
@@ -274,40 +232,6 @@ func pageAt(cursor []byte) *pagev1.PageParams {
 	}
 
 	return page
-}
-
-// resolveFolderIn uses a shared folder node when the path is that single folder, and asks the server otherwise.
-func (d *vaultDataSource) resolveFolderIn(ctx context.Context, match *vaultMatch, segments []string) (string, error) {
-	if len(segments) == 1 {
-		for _, n := range match.Shared {
-			if n.GetNode().GetIsDir() && n.GetNode().GetLabel() == segments[0] {
-				return n.GetNode().GetNodeId(), nil
-			}
-		}
-	}
-
-	return d.resolveFolder(ctx, match.VaultID, segments)
-}
-
-func (d *vaultDataSource) resolveFolder(ctx context.Context, vaultID string, segments []string) (string, error) {
-	resp, err := d.client.VaultBrowse.ListNodes(ctx, connect.NewRequest(&vaultbrowsev1.ListNodesRequest{
-		Base: &vaultbrowsev1.ListNodesRequest_Base{
-			VaultId: vaultID,
-			Locator: &vaultbrowsev1.NodeLocator{
-				Union: &vaultbrowsev1.NodeLocator_LabelPath{LabelPath: &vaultbrowsev1.LabelPath{Segments: segments}},
-			},
-			Page: &pagev1.PageParams{Limit: 1},
-		},
-	}))
-	if err != nil {
-		return "", fmt.Errorf("listing nodes: %w", err)
-	}
-
-	if resp.Msg.GetResolvedNodeId() == "" {
-		return "", errFolderNotFound
-	}
-
-	return resp.Msg.GetResolvedNodeId(), nil
 }
 
 func applySummary(ctx context.Context, m *vaultDataSourceModel, v *vaultcatalogv1.VaultSummary) diag.Diagnostics {

@@ -7,10 +7,12 @@ import (
 	"strings"
 	"time"
 
+	"github.com/hashicorp/terraform-plugin-framework-validators/listvalidator"
 	"github.com/hashicorp/terraform-plugin-framework-validators/stringvalidator"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema/listplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringdefault"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
@@ -18,6 +20,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/tfsdk"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 
+	vaultbrowsev1connect "github.com/splitsecure/apis/gen/go/proto/splitsecure/vaultbrowse/v1/vaultbrowsev1connect"
 	vaultusev1 "github.com/splitsecure/apis/gen/go/proto/splitsecure/vaultuse/v1"
 	"github.com/splitsecure/terraform-provider-splitsecure/splitsecure/client"
 	"github.com/splitsecure/terraform-provider-splitsecure/splitsecure/vaultapi"
@@ -90,10 +93,17 @@ func CommonAttributes(kind string) map[string]schema.Attribute {
 			PlanModifiers: ForceNew(),
 			Validators:    []validator.String{stringvalidator.OneOf(vaultapi.NotificationPolicyValues()...)},
 		},
-		"parent_node_id": schema.StringAttribute{
-			Optional:      true,
-			Description:   "Folder node id to place the " + kind + " under. Empty means the vault root. Changing it replaces the resource.",
-			PlanModifiers: ForceNew(),
+		"folder": schema.ListAttribute{
+			ElementType: types.StringType,
+			Optional:    true,
+			Description: "Folder path from the vault root to place the " + kind + " in, for example [\"terraform\", \"prod\"]. " +
+				"Missing folders are created. Unset places it at the vault root. Changing it replaces the resource.",
+			PlanModifiers: []planmodifier.List{
+				listplanmodifier.RequiresReplace(),
+			},
+			Validators: []validator.List{
+				listvalidator.ValueStringsAre(stringvalidator.LengthAtLeast(1)),
+			},
 		},
 		"sensitivity": schema.StringAttribute{
 			Optional:      true,
@@ -202,4 +212,24 @@ func WriteOptionsFromConfig(ctx context.Context, cfg tfsdk.Config, diags *diag.D
 // DestroyOptions builds the write options for a delete, which has no config to read them from.
 func DestroyOptions(kind, name string) *vaultusev1.WriteOptions {
 	return &vaultusev1.WriteOptions{Justification: fmt.Sprintf("terraform destroy of %s %q", kind, name)}
+}
+
+// EnsureFolder creates the folder path configured on a resource and returns its node id, or "" for the vault root.
+func EnsureFolder(ctx context.Context, browse vaultbrowsev1connect.VaultBrowseServiceClient, vaultID string, folder types.List, diags *diag.Diagnostics) (string, bool) {
+	var segments []string
+
+	diags.Append(folder.ElementsAs(ctx, &segments, false)...)
+
+	if diags.HasError() {
+		return "", false
+	}
+
+	nodeID, err := vaultapi.EnsureFolder(ctx, browse, vaultID, segments)
+	if err != nil {
+		diags.AddAttributeError(path.Root("folder"), "Preparing folder", err.Error())
+
+		return "", false
+	}
+
+	return nodeID, true
 }

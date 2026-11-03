@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"connectrpc.com/connect"
+	"github.com/hashicorp/terraform-plugin-framework/attr"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	rschema "github.com/hashicorp/terraform-plugin-framework/resource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/tfsdk"
@@ -80,7 +81,7 @@ func issuerPlan(ctx context.Context, t *testing.T) issuerModel {
 		Name:               types.StringValue("ci"),
 		Description:        types.StringValue(""),
 		NotificationPolicy: types.StringValue("notify_everyone"),
-		ParentNodeID:       types.StringValue("folder-1"),
+		Folder:             types.ListValueMust(types.StringType, []attr.Value{types.StringValue("terraform"), types.StringValue("prod")}),
 		Sensitivity:        unknown,
 		Justification:      types.StringNull(),
 		Wait:               types.StringNull(),
@@ -217,9 +218,13 @@ func TestIssuerLifecycle(t *testing.T) {
 				deleted *vaultusev1.DeleteRequest
 			)
 
+			browse := &vaultfake.Browse{OnGetRecord: issuerRecordHandler(t)}
+			tree := &vaultfake.FolderTree{Existing: map[string]string{"terraform": "id-terraform"}}
+			tree.Attach(browse)
+
 			c := vaultfake.New(t, vaultfake.Handlers{
 				Use:    issuerUse(viaTicket, &created, &deleted),
-				Browse: &vaultfake.Browse{OnGetRecord: issuerRecordHandler(t)},
+				Browse: browse,
 			})
 
 			r := &issuerResource{client: c}
@@ -227,6 +232,10 @@ func TestIssuerLifecycle(t *testing.T) {
 
 			state := createIssuer(ctx, t, r)
 			assertCreateRequest(t, created)
+
+			if !slices.Equal(tree.Created(), []string{"prod"}) || !slices.Equal(tree.Parents(), []string{"id-terraform"}) {
+				t.Errorf("folders created %v under %v, want prod under the existing terraform folder", tree.Created(), tree.Parents())
+			}
 
 			var got issuerModel
 
@@ -263,7 +272,7 @@ func assertCreateRequest(t *testing.T, req *vaultusev1.CreateWIFAuthorityRequest
 
 	base := req.GetBase()
 
-	if base.GetVaultId() != "vault-1" || base.GetCommon().GetName() != "ci" || base.GetCommon().GetRequestedParentNodeId() != "folder-1" || !base.GetAllowFreeFormTokens() {
+	if base.GetVaultId() != "vault-1" || base.GetCommon().GetName() != "ci" || base.GetCommon().GetRequestedParentNodeId() != "new-prod" || !base.GetAllowFreeFormTokens() {
 		t.Errorf("create request = %v", req)
 	}
 
