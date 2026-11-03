@@ -47,7 +47,7 @@ locals {
 # The issuer that signs every token. AWS takes ES256 and ES384 keys.
 resource "splitsecure_oidc_issuer" "aws" {
   vault_id = data.splitsecure_vault.main.id
-  folder   = ["aws"]
+  folder   = var.folder
   name     = "aws-oidc"
   algs     = ["ES256"]
 
@@ -68,7 +68,7 @@ resource "splitsecure_connected_app" "aws" {
   issuer_vault_id = data.splitsecure_vault.main.id
   issuer_id       = splitsecure_oidc_issuer.aws.id
   template        = "oidc/aws"
-  folder          = ["aws"]
+  folder          = var.folder
   name            = "aws-${var.role_name}"
 
   oidc {

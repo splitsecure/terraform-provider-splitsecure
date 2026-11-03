@@ -2,7 +2,7 @@
 
 This module lets your team sign in to an AWS role through SplitSecure with SAML. It creates both sides:
 
-- In SplitSecure: a SAML identity provider and a connected app for the AWS console, in the `aws` folder of your vault.
+- In SplitSecure: a SAML identity provider and a connected app for the AWS console, in the `aws` folder of your vault. Set `folder` to use another path.
 - In AWS: a SAML provider that trusts the identity provider, and a role with read-only access that the app signs in to.
 
 Each sign-in uses the requester's email as the NameID. The requester chooses a session from 15 minutes to 1 hour, and every session carries a `Team` tag.

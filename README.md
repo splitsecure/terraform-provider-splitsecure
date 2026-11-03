@@ -38,7 +38,7 @@ The provider asks GitHub for a new ID token on every refresh and sends it with t
 
 ## Installation (dev override)
 
-To test a local build against any plan (including `examples/full`) without
+To test a local build against any plan (including the ones in `examples/`) without
 publishing to the registry, use the one-off install target. It builds the
 provider and writes `~/.terraformrc` with a `dev_overrides` block pointing
 at the local binary; from then on every `terraform` invocation on this
@@ -80,20 +80,12 @@ provider "splitsecure" {
 
 `org_s2r` is provider-scoped, not per-resource — it's only consumed by the proposal-scoped enclave spawn at Send time. Multi-org callers alias the provider.
 
-## Example
+## Examples
 
-End-to-end example covering two SplitSecure teams + admin + read-only AWS federations: [`examples/full/main.tf`](./examples/full/main.tf).
+Each example creates a working AWS sign-in, both the SplitSecure and the AWS side. Its README says what to set and in what order.
 
-```bash
-cd examples/full
-cp terraform.tfvars.example terraform.tfvars  # fill in your s2r URIs (gitignored)
-export SPLITSECURE_SERVICE_ACCOUNT_S2R=s2r:...:sa:...
-export SPLITSECURE_KEY_ID=...
-export SPLITSECURE_PRIVATE_KEY="$(cat sa.pem)"
-terraform plan
-terraform apply -auto-approve
-terraform destroy -auto-approve
-```
+- [`examples/aws-saml`](./examples/aws-saml): sign in to an AWS role with SAML.
+- [`examples/aws-oidc`](./examples/aws-oidc): get AWS role sessions with OIDC tokens.
 
 ## Development
 

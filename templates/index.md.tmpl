@@ -17,10 +17,9 @@ description: |-
 
 {{ .SchemaMarkdown | trimspace }}
 
-## Full Example
+## Examples
 
-End-to-end wiring: a SplitSecure team with a SAML2 IdP, mirrored as `aws_iam_saml_provider` on the AWS side, with admin and readonly IAM roles and a single SP allowing federation into both. Lives at [`examples/full`](https://github.com/splitsecure/terraform-provider-splitsecure/tree/main/examples/full) in the repo.
+Each example creates a working AWS sign-in, both the SplitSecure and the AWS side. Its README says what to set and in what order.
 
-{{tffile "examples/full/variables.tf"}}
-
-{{tffile "examples/full/main.tf"}}
+- [`examples/aws-saml`](https://github.com/splitsecure/terraform-provider-splitsecure/tree/main/examples/aws-saml): sign in to an AWS role with SAML.
+- [`examples/aws-oidc`](https://github.com/splitsecure/terraform-provider-splitsecure/tree/main/examples/aws-oidc): get AWS role sessions with OIDC tokens.

@@ -31,7 +31,7 @@ data "aws_iam_policy" "read_only" {
 # The identity provider that signs every SAML assertion.
 resource "splitsecure_saml2_identity_provider" "aws" {
   vault_id = data.splitsecure_vault.main.id
-  folder   = ["aws"]
+  folder   = var.folder
   name     = "aws-saml"
 
   justification = "Sign in to AWS with SAML"
@@ -76,7 +76,7 @@ resource "splitsecure_connected_app" "aws" {
   issuer_vault_id = data.splitsecure_vault.main.id
   issuer_id       = splitsecure_saml2_identity_provider.aws.id
   template        = "saml2/aws"
-  folder          = ["aws"]
+  folder          = var.folder
   name            = "aws-${var.role_name}"
 
   saml2 {

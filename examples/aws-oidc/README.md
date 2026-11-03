@@ -2,7 +2,7 @@
 
 This module lets your team get AWS role sessions through SplitSecure with OIDC tokens. It creates both sides:
 
-- In SplitSecure: an OIDC issuer with an ES256 key and a connected app for AWS, in the `aws` folder of your vault.
+- In SplitSecure: an OIDC issuer with an ES256 key and a connected app for AWS, in the `aws` folder of your vault. Set `folder` to use another path.
 - In AWS: an OIDC provider that trusts the issuer, and a role with read-only access that the app's tokens can assume.
 
 The role trusts only this app. Its trust policy requires the audience `sts.amazonaws.com` and the subject SplitSecure derived for the app. Every token carries a `Team` session tag and the requester's session name as the source identity. The requester chooses a session from 15 minutes up to `max_session_seconds`.
