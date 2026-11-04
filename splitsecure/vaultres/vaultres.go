@@ -55,6 +55,15 @@ func ComputedOnce() []planmodifier.String {
 	return []planmodifier.String{stringplanmodifier.UseStateForUnknown()}
 }
 
+// SensitivityState returns a record's sensitivity for state, null when the record has none.
+func SensitivityState(s string) types.String {
+	if s == "" {
+		return types.StringNull()
+	}
+
+	return types.StringValue(s)
+}
+
 // CommonAttributes returns the attributes every vault record resource carries.
 // Callers add their own attributes to the returned map.
 func CommonAttributes(kind string) map[string]schema.Attribute {

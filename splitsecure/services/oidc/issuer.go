@@ -343,7 +343,7 @@ func populate(ctx context.Context, m *issuerModel, rec *vaultapi.Record) error {
 	m.Name = types.StringValue(attrs.GetName())
 	m.Description = types.StringValue(attrs.GetDescription())
 	m.NotificationPolicy = types.StringValue(vaultapi.NotificationPolicyToString(attrs.GetNotificationPolicy()))
-	m.Sensitivity = types.StringValue(vaultapi.SensitivityToString(attrs.GetSensitivity()))
+	m.Sensitivity = vaultres.SensitivityState(vaultapi.SensitivityToString(attrs.GetSensitivity()))
 
 	m.Issuer = types.StringValue(authority.GetIssuer())
 	m.JWKSURL = types.StringValue(authority.GetJwksUri())

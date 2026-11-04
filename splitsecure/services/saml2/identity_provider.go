@@ -330,7 +330,7 @@ func populate(m *saml2IdentityProviderModel, rec *vaultapi.Record) error {
 	m.Name = types.StringValue(attrs.GetName())
 	m.Description = types.StringValue(attrs.GetDescription())
 	m.NotificationPolicy = types.StringValue(vaultapi.NotificationPolicyToString(attrs.GetNotificationPolicy()))
-	m.Sensitivity = types.StringValue(vaultapi.SensitivityToString(attrs.GetSensitivity()))
+	m.Sensitivity = vaultres.SensitivityState(vaultapi.SensitivityToString(attrs.GetSensitivity()))
 
 	m.ProviderID = types.StringValue(idp.GetProviderId())
 	m.SSOURLRedirect = types.StringValue(idp.GetSsoUrl())

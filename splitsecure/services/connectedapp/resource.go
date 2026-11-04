@@ -568,7 +568,7 @@ func populate(m *appModel, rec *vaultapi.Record) (*pb.ConnectedAppParams, error)
 	m.Name = types.StringValue(attrs.GetName())
 	m.Description = types.StringValue(attrs.GetDescription())
 	m.NotificationPolicy = types.StringValue(vaultapi.NotificationPolicyToString(attrs.GetNotificationPolicy()))
-	m.Sensitivity = types.StringValue(vaultapi.SensitivityToString(attrs.GetSensitivity()))
+	m.Sensitivity = vaultres.SensitivityState(vaultapi.SensitivityToString(attrs.GetSensitivity()))
 
 	// A template that differs from the record's plans a replacement.
 	m.Template = types.StringValue(app.GetTemplate())
