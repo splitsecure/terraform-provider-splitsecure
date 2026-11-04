@@ -67,7 +67,10 @@ func (r *groupResource) Configure(_ context.Context, req resource.ConfigureReque
 func (r *groupResource) Schema(_ context.Context, _ resource.SchemaRequest, resp *resource.SchemaResponse) {
 	resp.Schema = schema.Schema{
 		Description: "Locally-managed principal group in the provider-configured organization. " +
-			"Terraform is authoritative over the member set; SCIM- and system-managed groups cannot be managed by this resource.",
+			"SCIM- and system-managed groups cannot be managed by this resource.\n\n" +
+			"Choosing a resource: this resource owns the member set only when members is set, and then removes members not listed. " +
+			"Leave members unset to manage the group itself and add members one by one with splitsecure_group_member. " +
+			"Never set members and use splitsecure_group_member on the same group.",
 		Attributes: map[string]schema.Attribute{
 			"group_s2r": schema.StringAttribute{
 				Computed:      true,
@@ -85,7 +88,9 @@ func (r *groupResource) Schema(_ context.Context, _ resource.SchemaRequest, resp
 				ElementType: types.StringType,
 				Optional:    true,
 				Description: "Authoritative set of member principal s2r URIs (users or service accounts). " +
-					"Principals not listed here are removed on apply. Leave unset for an empty group.",
+					"Principals not listed here are removed on apply, and an empty set removes everyone. " +
+					"Leave unset to leave membership unmanaged: Terraform then never reads or changes it. " +
+					"Do not combine members with splitsecure_group_member on the same group.",
 			},
 			"source": schema.StringAttribute{
 				Computed:      true,
@@ -181,26 +186,28 @@ func (r *groupResource) Read(ctx context.Context, req resource.ReadRequest, resp
 		return
 	}
 
-	principals, err := r.listMemberPrincipals(ctx, g.GetGroupS2R())
-	if err != nil {
-		resp.Diagnostics.AddError("Listing group members", err.Error())
-
-		return
-	}
-
 	state.Name = types.StringValue(g.GetName())
 	state.Source = types.StringValue(src)
-	// An unset members attribute means empty membership; keep it null
-	// when the group is in fact empty so imports and member-less
-	// configs stay diff-free.
-	if len(principals) > 0 || !state.Members.IsNull() {
+
+	// An unset members attribute leaves membership unmanaged, so it is never read.
+	if !state.Members.IsNull() {
+		principals, err := r.listMemberPrincipals(ctx, g.GetGroupS2R())
+		if err != nil {
+			resp.Diagnostics.AddError("Listing group members", err.Error())
+
+			return
+		}
+
 		membersVal, d := types.SetValueFrom(ctx, types.StringType, principals)
 		resp.Diagnostics.Append(d...)
+
 		if resp.Diagnostics.HasError() {
 			return
 		}
+
 		state.Members = membersVal
 	}
+
 	resp.Diagnostics.Append(resp.State.Set(ctx, &state)...)
 }
 
@@ -238,6 +245,12 @@ func (r *groupResource) Update(ctx context.Context, req resource.UpdateRequest, 
 			return
 		}
 		applied.Name = plan.Name
+	}
+
+	if plan.Members.IsNull() {
+		resp.Diagnostics.Append(resp.State.Set(ctx, &plan)...)
+
+		return
 	}
 
 	current, title, err := r.reconcileMembers(ctx, groupS2R, stateMembers, planMembers)

@@ -34,6 +34,8 @@ type Client struct {
 	VaultBrowse  vaultbrowsev1connect.VaultBrowseServiceClient
 	VaultCatalog vaultcatalogv1connect.VaultCatalogServiceClient
 	OrgS2R       string
+	// PrincipalS2R is the service account the client signs in as.
+	PrincipalS2R string
 }
 
 // New creates a Client with timeouts and service account auth.
@@ -73,7 +75,21 @@ func New(cfg Config) (*Client, error) {
 		VaultBrowse:  vaultbrowsev1connect.NewVaultBrowseServiceClient(httpClient, cfg.Endpoint),
 		VaultCatalog: vaultcatalogv1connect.NewVaultCatalogServiceClient(httpClient, cfg.Endpoint),
 		OrgS2R:       cfg.OrgS2R,
+		PrincipalS2R: principalOf(cfg),
 	}, nil
+}
+
+// principalOf returns the service account s2r of whichever credential is set.
+func principalOf(cfg Config) string {
+	if cfg.Key != nil {
+		return cfg.Key.ServiceAccountS2R
+	}
+
+	if cfg.Workload != nil {
+		return cfg.Workload.ServiceAccountS2R
+	}
+
+	return ""
 }
 
 type loggingTransport struct {

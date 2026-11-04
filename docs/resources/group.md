@@ -3,12 +3,15 @@
 page_title: "splitsecure_group Resource - SplitSecure"
 subcategory: ""
 description: |-
-  Locally-managed principal group in the provider-configured organization. Terraform is authoritative over the member set; SCIM- and system-managed groups cannot be managed by this resource.
+  Locally-managed principal group in the provider-configured organization. SCIM- and system-managed groups cannot be managed by this resource.
+  Choosing a resource: this resource owns the member set only when members is set, and then removes members not listed. Leave members unset to manage the group itself and add members one by one with splitsecure_group_member. Never set members and use splitsecure_group_member on the same group.
 ---
 
 # splitsecure_group (Resource)
 
-Locally-managed principal group in the provider-configured organization. Terraform is authoritative over the member set; SCIM- and system-managed groups cannot be managed by this resource.
+Locally-managed principal group in the provider-configured organization. SCIM- and system-managed groups cannot be managed by this resource.
+
+Choosing a resource: this resource owns the member set only when members is set, and then removes members not listed. Leave members unset to manage the group itself and add members one by one with splitsecure_group_member. Never set members and use splitsecure_group_member on the same group.
 
 
 
@@ -21,7 +24,7 @@ Locally-managed principal group in the provider-configured organization. Terrafo
 
 ### Optional
 
-- `members` (Set of String) Authoritative set of member principal s2r URIs (users or service accounts). Principals not listed here are removed on apply. Leave unset for an empty group.
+- `members` (Set of String) Authoritative set of member principal s2r URIs (users or service accounts). Principals not listed here are removed on apply, and an empty set removes everyone. Leave unset to leave membership unmanaged: Terraform then never reads or changes it. Do not combine members with splitsecure_group_member on the same group.
 
 ### Read-Only
 

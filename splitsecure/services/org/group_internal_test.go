@@ -560,8 +560,8 @@ func TestReconcileMembers_AddPath(t *testing.T) {
 	})
 }
 
-// TestGroupRead_MemberState covers the null-vs-empty member-set branch
-// that keeps imported and member-less groups diff-free.
+// TestGroupRead_MemberState covers the unmanaged-vs-managed member-set branch:
+// a null set is never read, a set is refreshed.
 func TestGroupRead_MemberState(t *testing.T) {
 	t.Parallel()
 
@@ -576,9 +576,15 @@ func TestGroupRead_MemberState(t *testing.T) {
 		wantMembers  []string
 	}{
 		{
-			name:         "populated membership is refreshed from the server",
+			name:         "unmanaged membership stays null though the server has members",
 			listMembers:  []*orgsvcv1.GroupMember{{PrincipalS2R: "s2r:test:usr:a"}, {PrincipalS2R: "s2r:test:usr:b"}},
 			priorMembers: types.SetNull(types.StringType),
+			wantNull:     true,
+		},
+		{
+			name:         "managed membership is refreshed from the server",
+			listMembers:  []*orgsvcv1.GroupMember{{PrincipalS2R: "s2r:test:usr:a"}, {PrincipalS2R: "s2r:test:usr:b"}},
+			priorMembers: mustMemberSet(t, "s2r:test:usr:a"),
 			wantMembers:  []string{"s2r:test:usr:a", "s2r:test:usr:b"},
 		},
 		{
@@ -850,5 +856,95 @@ func TestGroupDataSource_SchemaRefusesBothOrNeitherOfS2RAndName(t *testing.T) {
 				t.Errorf("errors = %v, want error %v", diags, tc.wantErr)
 			}
 		})
+	}
+}
+
+// memberCalls counts the group RPCs a test expects not to see.
+type memberCalls struct {
+	fakeOrgClient
+
+	lists, adds, removes int
+	members              []*orgsvcv1.GroupMember
+	addReq               *orgsvcv1.AddGroupMembersRequest
+	removeReq            *orgsvcv1.RemoveGroupMemberRequest
+}
+
+func (m *memberCalls) ListGroupMembers(
+	context.Context, *connect.Request[orgsvcv1.ListGroupMembersRequest],
+) (*connect.Response[orgsvcv1.ListGroupMembersResponse], error) {
+	m.lists++
+
+	return connect.NewResponse(&orgsvcv1.ListGroupMembersResponse{Members: m.members}), nil
+}
+
+func (m *memberCalls) AddGroupMembers(
+	_ context.Context, req *connect.Request[orgsvcv1.AddGroupMembersRequest],
+) (*connect.Response[orgsvcv1.AddGroupMembersResponse], error) {
+	m.adds++
+	m.addReq = req.Msg
+
+	return connect.NewResponse(&orgsvcv1.AddGroupMembersResponse{}), nil
+}
+
+func (m *memberCalls) RemoveGroupMember(
+	_ context.Context, req *connect.Request[orgsvcv1.RemoveGroupMemberRequest],
+) (*connect.Response[orgsvcv1.RemoveGroupMemberResponse], error) {
+	m.removes++
+	m.removeReq = req.Msg
+
+	return connect.NewResponse(&orgsvcv1.RemoveGroupMemberResponse{}), nil
+}
+
+func (m *memberCalls) UpdateGroup(
+	context.Context, *connect.Request[orgsvcv1.UpdateGroupRequest],
+) (*connect.Response[orgsvcv1.UpdateGroupResponse], error) {
+	return connect.NewResponse(&orgsvcv1.UpdateGroupResponse{}), nil
+}
+
+func TestGroupRead_UnmanagedMembersAreNeverListed(t *testing.T) {
+	t.Parallel()
+
+	s := groupResourceSchema(t)
+	org := &memberCalls{fakeOrgClient: fakeOrgClient{getGroup: &orgsvcv1.Group{GroupS2R: "g", Name: "SRE", Source: orgsvcv1.GroupSource_GROUP_SOURCE_LOCAL}}}
+
+	state := groupStateForRead(t, s, groupResourceModel{
+		GroupS2R: types.StringValue("g"), Name: types.StringValue("SRE"), Members: types.SetNull(types.StringType), Source: types.StringValue("local"),
+	})
+	resp := &resource.ReadResponse{State: state}
+
+	(&groupResource{client: &client.Client{OrgService: org}}).Read(context.Background(), resource.ReadRequest{State: state}, resp)
+
+	if resp.Diagnostics.HasError() || org.lists != 0 {
+		t.Errorf("lists = %d, diags = %v", org.lists, resp.Diagnostics)
+	}
+}
+
+func TestGroupUpdate_UnmanagedMembersMakeNoMemberCalls(t *testing.T) {
+	t.Parallel()
+
+	s := groupResourceSchema(t)
+	org := &memberCalls{}
+
+	prior := groupStateForRead(t, s, groupResourceModel{
+		GroupS2R: types.StringValue("g"), Name: types.StringValue("old"), Members: mustMemberSet(t, "s2r:test:usr:a"), Source: types.StringValue("local"),
+	})
+	next := groupStateForRead(t, s, groupResourceModel{
+		GroupS2R: types.StringValue("g"), Name: types.StringValue("new"), Members: types.SetNull(types.StringType), Source: types.StringValue("local"),
+	})
+
+	resp := &resource.UpdateResponse{State: prior}
+	(&groupResource{client: &client.Client{OrgService: org}}).Update(context.Background(),
+		resource.UpdateRequest{Plan: tfsdk.Plan{Schema: s, Raw: next.Raw}, State: prior}, resp)
+
+	if resp.Diagnostics.HasError() || org.adds+org.removes+org.lists != 0 {
+		t.Errorf("adds=%d removes=%d lists=%d diags=%v", org.adds, org.removes, org.lists, resp.Diagnostics)
+	}
+
+	var got groupResourceModel
+
+	resp.State.Get(context.Background(), &got)
+
+	if !got.Members.IsNull() || got.Name.ValueString() != "new" {
+		t.Errorf("state = %+v", got)
 	}
 }

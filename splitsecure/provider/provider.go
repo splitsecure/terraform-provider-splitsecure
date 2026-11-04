@@ -144,9 +144,11 @@ func (p *splitsecureProvider) Resources(_ context.Context) []func() resource.Res
 		oidc.NewIssuerResource,
 		vault.NewFolderResource,
 		vault.NewGrantResource,
+		vault.NewNodeGrantsResource,
 		connectedapp.NewConnectedAppResource,
 		org.NewGrant,
 		org.NewGroup,
+		org.NewGroupMember,
 	}
 }
 

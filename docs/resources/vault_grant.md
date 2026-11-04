@@ -4,11 +4,14 @@ page_title: "splitsecure_vault_grant Resource - SplitSecure"
 subcategory: ""
 description: |-
   Grant of one grantee on a vault folder or record. Import with vault_id/node_id/grantee, where grantee is the full s2r of the principal or group.
+  Choosing a resource: this resource is additive. It adds, changes and removes only its own grant and leaves every other grant on the node alone. Use splitsecure_vault_node_grants instead to own every direct grant on the node. Never use both on the same node.
 ---
 
 # splitsecure_vault_grant (Resource)
 
 Grant of one grantee on a vault folder or record. Import with vault_id/node_id/grantee, where grantee is the full s2r of the principal or group.
+
+Choosing a resource: this resource is additive. It adds, changes and removes only its own grant and leaves every other grant on the node alone. Use splitsecure_vault_node_grants instead to own every direct grant on the node. Never use both on the same node.
 
 ## Example Usage
 

@@ -62,7 +62,10 @@ func (r *grantResource) Configure(_ context.Context, req resource.ConfigureReque
 
 func (r *grantResource) Schema(_ context.Context, _ resource.SchemaRequest, resp *resource.SchemaResponse) {
 	resp.Schema = schema.Schema{
-		Description: "Grant of one grantee on a vault folder or record. Import with vault_id/node_id/grantee, where grantee is the full s2r of the principal or group.",
+		Description: "Grant of one grantee on a vault folder or record. Import with vault_id/node_id/grantee, where grantee is the full s2r of the principal or group.\n\n" +
+			"Choosing a resource: this resource is additive. It adds, changes and removes only its own grant and leaves every other grant on the node alone. " +
+			"Use splitsecure_vault_node_grants instead to own every direct grant on the node. " +
+			"Never use both on the same node.",
 		Attributes: map[string]schema.Attribute{
 			"id": schema.StringAttribute{
 				Computed:      true,
@@ -188,33 +191,44 @@ func (r *grantResource) Read(ctx context.Context, req resource.ReadRequest, resp
 	resp.Diagnostics.Append(resp.State.Set(ctx, &state)...)
 }
 
-// findGrant pages through the grants on the node and returns the grantee's, or nil when it has none.
-func findGrant(ctx context.Context, c *client.Client, m *grantModel) (*vaultbrowsev1.Grant, error) {
-	var cursor []byte
+// listGrants pages through the direct grants on a node.
+func listGrants(ctx context.Context, c *client.Client, vaultID, nodeID string) ([]*vaultbrowsev1.Grant, error) {
+	var (
+		all    []*vaultbrowsev1.Grant
+		cursor []byte
+	)
 
 	for {
 		resp, err := c.VaultBrowse.ListGrants(ctx, connect.NewRequest(&vaultbrowsev1.ListGrantsRequest{
-			Base: &vaultbrowsev1.ListGrantsRequest_Base{
-				VaultId:    m.VaultID.ValueString(),
-				NodeId:     m.NodeID.ValueString(),
-				PageParams: pageAt(cursor),
-			},
+			Base: &vaultbrowsev1.ListGrantsRequest_Base{VaultId: vaultID, NodeId: nodeID, PageParams: pageAt(cursor)},
 		}))
 		if err != nil {
 			return nil, fmt.Errorf("listing grants: %w", err)
 		}
 
-		for _, g := range resp.Msg.GetGrants() {
-			if g.GetGranteeId() == m.Grantee.ValueString() && sameIDP(g.GetIdpId(), m.IDPID.ValueString()) {
-				return g, nil
-			}
-		}
+		all = append(all, resp.Msg.GetGrants()...)
 
 		cursor = resp.Msg.GetNextCursor()
 		if len(cursor) == 0 {
-			return nil, nil //nolint:nilnil // no grant is a normal answer, not an error.
+			return all, nil
 		}
 	}
+}
+
+// findGrant returns the grantee's direct grant on the node, or nil when it has none.
+func findGrant(ctx context.Context, c *client.Client, m *grantModel) (*vaultbrowsev1.Grant, error) {
+	grants, err := listGrants(ctx, c, m.VaultID.ValueString(), m.NodeID.ValueString())
+	if err != nil {
+		return nil, err
+	}
+
+	for _, g := range grants {
+		if g.GetGranteeId() == m.Grantee.ValueString() && sameIDP(g.GetIdpId(), m.IDPID.ValueString()) {
+			return g, nil
+		}
+	}
+
+	return nil, nil //nolint:nilnil // no grant is a normal answer, not an error.
 }
 
 func (r *grantResource) Delete(ctx context.Context, req resource.DeleteRequest, resp *resource.DeleteResponse) {
