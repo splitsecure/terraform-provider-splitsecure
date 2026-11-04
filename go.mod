@@ -9,7 +9,7 @@ require (
 	github.com/hashicorp/terraform-plugin-framework-validators v0.19.0
 	github.com/hashicorp/terraform-plugin-go v0.31.0
 	github.com/hashicorp/terraform-plugin-log v0.11.0
-	github.com/splitsecure/apis v0.0.0-20261104023844-5315a1d46813
+	github.com/splitsecure/apis v0.0.0-20261104151004-a4211e17f7db
 	google.golang.org/protobuf v1.36.12
 )
 
