@@ -113,9 +113,7 @@ func (r *folderResource) Read(ctx context.Context, req resource.ReadRequest, res
 
 	vaultID := state.VaultID.ValueString()
 
-	got, err := r.client.VaultBrowse.GetNode(ctx, connect.NewRequest(&vaultbrowsev1.GetNodeRequest{
-		Base: &vaultbrowsev1.GetNodeRequest_Base{VaultId: vaultID, Locator: nodeLocator(state.ID.ValueString())},
-	}))
+	loc, err := vaultapi.GetNodeLocation(ctx, r.client.VaultBrowse, vaultID, state.ID.ValueString())
 	if vaultapi.IsNotFound(err) {
 		resp.State.RemoveResource(ctx)
 
@@ -128,9 +126,9 @@ func (r *folderResource) Read(ctx context.Context, req resource.ReadRequest, res
 		return
 	}
 
-	state.Name = types.StringValue(got.Msg.GetNode().GetLabel())
+	state.Name = types.StringValue(loc.Node.GetLabel())
 
-	parentID, known, err := parentOf(ctx, r.client, vaultID, got.Msg)
+	parentID, known, err := loc.ParentID(ctx, r.client.VaultBrowse, vaultID)
 	if err != nil {
 		resp.Diagnostics.AddError("Reading folder parent", err.Error())
 
@@ -142,33 +140,6 @@ func (r *folderResource) Read(ctx context.Context, req resource.ReadRequest, res
 	}
 
 	resp.Diagnostics.Append(resp.State.Set(ctx, &state)...)
-}
-
-// parentOf returns the parent node id of a fetched node, "" for the root. It reports unknown when the caller's path is cut above the node.
-func parentOf(ctx context.Context, c *client.Client, vaultID string, node *vaultbrowsev1.GetNodeResponse) (string, bool, error) {
-	labels := node.GetLabelPath()
-
-	if node.GetPathTruncated() {
-		return "", false, nil
-	}
-
-	if len(labels) <= 1 {
-		return "", true, nil
-	}
-
-	parent, err := c.VaultBrowse.GetNode(ctx, connect.NewRequest(&vaultbrowsev1.GetNodeRequest{
-		Base: &vaultbrowsev1.GetNodeRequest_Base{
-			VaultId: vaultID,
-			Locator: &vaultbrowsev1.NodeLocator{
-				Union: &vaultbrowsev1.NodeLocator_LabelPath{LabelPath: &vaultbrowsev1.LabelPath{Segments: labels[:len(labels)-1]}},
-			},
-		},
-	}))
-	if err != nil {
-		return "", false, fmt.Errorf("resolving parent folder: %w", err)
-	}
-
-	return parent.Msg.GetNode().GetNodeId(), true, nil
 }
 
 func (r *folderResource) Update(ctx context.Context, req resource.UpdateRequest, resp *resource.UpdateResponse) {

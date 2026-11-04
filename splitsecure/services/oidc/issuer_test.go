@@ -533,3 +533,103 @@ func TestIssuerUpdate_RefusesAChangeBeyondPlacement(t *testing.T) {
 		t.Errorf("a name change should be refused; moves = %v", h.moves)
 	}
 }
+
+// read refreshes the harness state and returns the model it ends with.
+func (h *placementHarness) read(ctx context.Context, t *testing.T) issuerModel {
+	t.Helper()
+
+	resp := &resource.ReadResponse{State: h.state}
+	h.r.Read(ctx, resource.ReadRequest{State: h.state}, resp)
+
+	if resp.Diagnostics.HasError() || resp.State.Raw.IsNull() {
+		t.Fatalf("Read: %v", resp.Diagnostics)
+	}
+
+	h.state = resp.State
+
+	var got issuerModel
+
+	h.state.Get(ctx, &got)
+
+	return got
+}
+
+func TestIssuerRead_ReportsARecordMovedToAnotherFolderPath(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	h := newPlacementHarness(ctx, t)
+	h.tree.Nodes = map[string][]string{"node-1": {"terraform", "other", "aws"}}
+
+	got := h.read(ctx, t)
+
+	var path []string
+
+	got.Folder.ElementsAs(ctx, &path, false)
+
+	if !slices.Equal(path, []string{"terraform", "other"}) {
+		t.Fatalf("folder = %v, want the observed path", path)
+	}
+
+	// The drift plans a move back to the configured path.
+	h.update(ctx, t, func(m *issuerModel) {
+		m.Folder = types.ListValueMust(types.StringType, []attr.Value{types.StringValue("terraform"), types.StringValue("prod")})
+	})
+
+	if len(h.moves) != 1 || h.moves[0].GetBase().GetNodeId() != "node-1" {
+		t.Errorf("moves = %v", h.moves)
+	}
+}
+
+func TestIssuerRead_ReportsARecordMovedFromItsFolderID(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	h := newPlacementHarness(ctx, t)
+	h.tree.Existing["a/b"] = "f-other"
+	h.tree.Nodes = map[string][]string{"node-1": {"a", "b", "aws"}}
+
+	h.update(ctx, t, func(m *issuerModel) {
+		m.Folder = types.ListNull(types.StringType)
+		m.FolderID = types.StringValue("f-conf")
+	})
+
+	got := h.read(ctx, t)
+
+	if got.FolderID.ValueString() != "f-other" {
+		t.Errorf("folder_id = %q, want the observed parent", got.FolderID.ValueString())
+	}
+}
+
+func TestIssuerRead_KeepsStateWhenThePathIsTruncated(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	h := newPlacementHarness(ctx, t)
+	h.tree.Truncated = true
+	h.tree.Nodes = map[string][]string{"node-1": {"elsewhere", "aws"}}
+
+	before := h.state.Raw
+
+	h.read(ctx, t)
+
+	if !h.state.Raw.Equal(before) {
+		t.Error("a truncated path must leave folder and folder_id as they were")
+	}
+}
+
+func TestIssuerRead_ShowsNoDriftForARecordAtTheConfiguredPlace(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	h := newPlacementHarness(ctx, t)
+	h.tree.Nodes = map[string][]string{"node-1": {"terraform", "prod", "aws"}}
+
+	before := h.state.Raw
+
+	h.read(ctx, t)
+
+	if !h.state.Raw.Equal(before) {
+		t.Error("a record at the configured place must not drift")
+	}
+}

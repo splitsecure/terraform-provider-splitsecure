@@ -224,6 +224,13 @@ func (r *saml2IdentityProvider) Read(ctx context.Context, req resource.ReadReque
 		return
 	}
 
+	state.Folder, state.FolderID, err = vaultres.ObservePlacement(ctx, r.client.VaultBrowse, state.VaultID.ValueString(), state.ID.ValueString(), state.Folder, state.FolderID)
+	if err != nil {
+		resp.Diagnostics.AddError("Reading folder placement", err.Error())
+
+		return
+	}
+
 	resp.Diagnostics.Append(resp.State.Set(ctx, &state)...)
 }
 

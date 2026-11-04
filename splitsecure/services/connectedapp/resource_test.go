@@ -43,6 +43,10 @@ var errGone = errors.New("gone")
 func newClient(t *testing.T, use *vaultfake.Use, browse *vaultfake.Browse) *client.Client {
 	t.Helper()
 
+	if browse != nil && browse.OnGetNode == nil {
+		browse.OnGetNode = vaultfake.AtRoot
+	}
+
 	return vaultfake.New(t, vaultfake.Handlers{Use: use, Browse: browse})
 }
 
@@ -972,5 +976,102 @@ func TestConnectedAppUpdate_RefusesAChangeBeyondPlacement(t *testing.T) {
 
 	if !resp.Diagnostics.HasError() || len(h.moves) != 0 {
 		t.Errorf("a name change should be refused; moves = %v", h.moves)
+	}
+}
+
+// read refreshes the harness state and returns the model it ends with.
+func (h *placementHarness) read(t *testing.T) appModel {
+	t.Helper()
+
+	ctx := context.Background()
+	resp := &resource.ReadResponse{State: h.state}
+	h.r.Read(ctx, resource.ReadRequest{State: h.state}, resp)
+
+	if resp.Diagnostics.HasError() || resp.State.Raw.IsNull() {
+		t.Fatalf("Read: %v", resp.Diagnostics)
+	}
+
+	h.state = resp.State
+
+	var got appModel
+
+	h.state.Get(ctx, &got)
+
+	return got
+}
+
+func TestConnectedAppRead_ReportsARecordMovedToAnotherFolderPath(t *testing.T) {
+	t.Parallel()
+
+	h := newPlacementHarness(t)
+	h.tree.Nodes = map[string][]string{"node-1": {"terraform", "other", "aws-prod"}}
+
+	got := h.read(t)
+
+	var path []string
+
+	got.Folder.ElementsAs(context.Background(), &path, false)
+
+	if !slices.Equal(path, []string{"terraform", "other"}) {
+		t.Fatalf("folder = %v, want the observed path", path)
+	}
+
+	// The drift plans a move back to the configured path.
+	resp := h.update(t, func(m *appModel) {
+		m.Folder = types.ListValueMust(types.StringType, []attr.Value{types.StringValue("terraform"), types.StringValue("prod")})
+	})
+	if resp.Diagnostics.HasError() || len(h.moves) != 1 || h.moves[0].GetBase().GetNodeId() != "node-1" {
+		t.Errorf("moves = %v, diags = %v", h.moves, resp.Diagnostics)
+	}
+}
+
+func TestConnectedAppRead_ReportsARecordMovedFromItsFolderID(t *testing.T) {
+	t.Parallel()
+
+	h := newPlacementHarness(t)
+	h.tree.Existing["a/b"] = "f-other"
+	h.tree.Nodes = map[string][]string{"node-1": {"a", "b", "aws-prod"}}
+
+	resp := h.update(t, func(m *appModel) {
+		m.Folder = types.ListNull(types.StringType)
+		m.FolderID = types.StringValue("f-conf")
+	})
+	if resp.Diagnostics.HasError() {
+		t.Fatalf("Update: %v", resp.Diagnostics)
+	}
+
+	if got := h.read(t); got.FolderID.ValueString() != "f-other" {
+		t.Errorf("folder_id = %q, want the observed parent", got.FolderID.ValueString())
+	}
+}
+
+func TestConnectedAppRead_KeepsStateWhenThePathIsTruncated(t *testing.T) {
+	t.Parallel()
+
+	h := newPlacementHarness(t)
+	h.tree.Truncated = true
+	h.tree.Nodes = map[string][]string{"node-1": {"elsewhere", "aws-prod"}}
+
+	before := h.state.Raw
+
+	h.read(t)
+
+	if !h.state.Raw.Equal(before) {
+		t.Error("a truncated path must leave folder and folder_id as they were")
+	}
+}
+
+func TestConnectedAppRead_ShowsNoDriftForARecordAtTheConfiguredPlace(t *testing.T) {
+	t.Parallel()
+
+	h := newPlacementHarness(t)
+	h.tree.Nodes = map[string][]string{"node-1": {"terraform", "prod", "aws-prod"}}
+
+	before := h.state.Raw
+
+	h.read(t)
+
+	if !h.state.Raw.Equal(before) {
+		t.Error("a record at the configured place must not drift")
 	}
 }
