@@ -1,15 +1,15 @@
 module github.com/splitsecure/terraform-provider-splitsecure
 
-go 1.26
+go 1.26.0
 
 require (
-	connectrpc.com/connect v1.21.0
+	connectrpc.com/connect v1.21.1
 	github.com/hashicorp/terraform-plugin-docs v0.25.0
 	github.com/hashicorp/terraform-plugin-framework v1.19.0
 	github.com/hashicorp/terraform-plugin-framework-validators v0.19.0
 	github.com/hashicorp/terraform-plugin-go v0.31.0
 	github.com/hashicorp/terraform-plugin-log v0.11.0
-	github.com/splitsecure/apis v0.0.0-20261103201506-37f173d7818a
+	github.com/splitsecure/apis v0.0.0-20261104023844-5315a1d46813
 	google.golang.org/protobuf v1.36.12
 )
 
