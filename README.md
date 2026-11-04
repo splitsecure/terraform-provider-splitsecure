@@ -82,10 +82,14 @@ provider "splitsecure" {
 
 ## Examples
 
-Each example creates a working AWS sign-in, both the SplitSecure and the AWS side. Its README says what to set and in what order.
+Each example creates a working cloud sign-in, both the SplitSecure and the cloud side. Its README says what to set and in what order.
 
 - [`examples/aws-saml`](./examples/aws-saml): sign in to an AWS role with SAML.
 - [`examples/aws-oidc`](./examples/aws-oidc): get AWS role sessions with OIDC tokens.
+- [`examples/gcp-saml`](./examples/gcp-saml): sign in to the Google Cloud console with SAML, through a workforce pool.
+- [`examples/gcp-oidc`](./examples/gcp-oidc): get Google Cloud service account tokens with OIDC tokens.
+- [`examples/azure-saml`](./examples/azure-saml): sign in to Entra ID as a user of a federated domain with SAML.
+- [`examples/azure-oidc`](./examples/azure-oidc): get Entra ID application tokens with OIDC tokens.
 
 ## Development
 

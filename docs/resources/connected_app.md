@@ -322,6 +322,521 @@ resource "splitsecure_vault_grant" "app_use" {
 }
 ```
 
+From the [`gcp-saml`](https://github.com/splitsecure/terraform-provider-splitsecure/tree/main/examples/gcp-saml) scenario:
+
+```terraform
+terraform {
+  required_version = ">= 1.11"
+
+  required_providers {
+    splitsecure = {
+      source = "splitsecure/splitsecure"
+    }
+    google = {
+      source  = "hashicorp/google"
+      version = ">= 6.0"
+    }
+  }
+}
+
+# Reads SPLITSECURE_ORG_S2R, SPLITSECURE_SERVICE_ACCOUNT_S2R, SPLITSECURE_KEY_ID
+# and SPLITSECURE_PRIVATE_KEY, and SPLITSECURE_ENDPOINT outside production.
+provider "splitsecure" {}
+
+provider "google" {
+  project = var.project_id
+}
+
+data "splitsecure_vault" "gcp_access" {
+  name = var.vault_name
+}
+
+locals {
+  pool_path = "locations/global/workforcePools/${google_iam_workforce_pool.splitsecure.workforce_pool_id}"
+
+  # Google Cloud names the service provider by the pool and the provider.
+  provider_path = "${local.pool_path}/providers/${google_iam_workforce_pool_provider.splitsecure.provider_id}"
+}
+
+# The folder that holds the records. Deleting it moves anything left inside to lost+found.
+resource "splitsecure_vault_folder" "gcp" {
+  vault_id  = data.splitsecure_vault.gcp_access.id
+  name      = var.folder_name
+  parent_id = var.parent_folder_id == "" ? null : var.parent_folder_id
+}
+
+# The identity provider that signs every SAML assertion.
+resource "splitsecure_saml2_identity_provider" "gcp_console" {
+  vault_id  = data.splitsecure_vault.gcp_access.id
+  folder_id = splitsecure_vault_folder.gcp.id
+  name      = "Google Cloud console sign-in"
+
+  justification = "Sign in to the Google Cloud console with SAML"
+}
+
+# A workforce pool of the organization, for people outside Google's own directory.
+resource "google_iam_workforce_pool" "splitsecure" {
+  parent            = "organizations/${var.organization_id}"
+  location          = "global"
+  workforce_pool_id = var.pool_id
+  display_name      = "SplitSecure"
+  session_duration  = "3600s"
+}
+
+# The pool trusts the identity provider through its metadata, and takes the NameID as the user.
+resource "google_iam_workforce_pool_provider" "splitsecure" {
+  workforce_pool_id = google_iam_workforce_pool.splitsecure.workforce_pool_id
+  location          = google_iam_workforce_pool.splitsecure.location
+  provider_id       = var.pool_provider_id
+  display_name      = "SplitSecure"
+
+  attribute_mapping = {
+    "google.subject" = "assertion.subject"
+  }
+
+  saml {
+    idp_metadata_xml = splitsecure_saml2_identity_provider.gcp_console.metadata_xml
+  }
+}
+
+# Each user gets the role on the project. The subject is the NameID: the requester's email.
+resource "google_project_iam_member" "federated_user" {
+  for_each = toset(var.user_emails)
+
+  project = var.project_id
+  role    = var.user_role
+  member  = "principal://iam.googleapis.com/${local.pool_path}/subject/${each.value}"
+}
+
+resource "splitsecure_connected_app" "gcp_console" {
+  issuer_vault_id = data.splitsecure_vault.gcp_access.id
+  issuer_id       = splitsecure_saml2_identity_provider.gcp_console.id
+  template        = "saml2/gcp"
+  folder_id       = splitsecure_vault_folder.gcp.id
+  name            = "Google Cloud console (${var.pool_id})"
+
+  saml2 {
+    entity_id = "https://iam.googleapis.com/${local.provider_path}"
+    acs_url   = "https://auth.cloud.google/signin-callback/${local.provider_path}"
+  }
+
+  # The NameID is the requester's email.
+  field {
+    name  = "name_id_format"
+    value = "urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress"
+  }
+
+  field {
+    name      = "requester_email"
+    requester = "email"
+  }
+
+  name_id {
+    parts = ["field:requester_email"]
+  }
+
+  justification = "Let the team sign in to the Google Cloud console"
+}
+
+# Optional: let a principal or group use the app.
+resource "splitsecure_vault_grant" "app_use" {
+  count = var.grantee == "" ? 0 : 1
+
+  vault_id = data.splitsecure_vault.gcp_access.id
+  node_id  = splitsecure_connected_app.gcp_console.id
+  grantee  = var.grantee
+  tier     = "use"
+}
+```
+
+From the [`gcp-oidc`](https://github.com/splitsecure/terraform-provider-splitsecure/tree/main/examples/gcp-oidc) scenario:
+
+```terraform
+terraform {
+  required_version = ">= 1.11"
+
+  required_providers {
+    splitsecure = {
+      source = "splitsecure/splitsecure"
+    }
+    google = {
+      source  = "hashicorp/google"
+      version = ">= 6.0"
+    }
+  }
+}
+
+# Reads SPLITSECURE_ORG_S2R, SPLITSECURE_SERVICE_ACCOUNT_S2R, SPLITSECURE_KEY_ID
+# and SPLITSECURE_PRIVATE_KEY, and SPLITSECURE_ENDPOINT outside production.
+provider "splitsecure" {}
+
+provider "google" {
+  project = var.project_id
+}
+
+data "splitsecure_vault" "gcp_access" {
+  name = var.vault_name
+}
+
+data "google_project" "current" {}
+
+locals {
+  pool_name = "projects/${data.google_project.current.number}/locations/global/workloadIdentityPools/${google_iam_workload_identity_pool.splitsecure.workload_identity_pool_id}"
+
+  # The audience every token carries: the full name of the pool provider.
+  audience = "https://iam.googleapis.com/${local.pool_name}/providers/${google_iam_workload_identity_pool_provider.splitsecure.workload_identity_pool_provider_id}"
+}
+
+# The token exchange and the service account impersonation need these APIs.
+resource "google_project_service" "federation" {
+  for_each = toset(["iam.googleapis.com", "iamcredentials.googleapis.com", "sts.googleapis.com"])
+
+  service            = each.value
+  disable_on_destroy = false
+}
+
+# The folder that holds the records. Deleting it moves anything left inside to lost+found.
+resource "splitsecure_vault_folder" "gcp" {
+  vault_id  = data.splitsecure_vault.gcp_access.id
+  name      = var.folder_name
+  parent_id = var.parent_folder_id == "" ? null : var.parent_folder_id
+}
+
+# The issuer that signs every token. Google Cloud takes an ES256 key.
+resource "splitsecure_oidc_issuer" "gcp_federation" {
+  vault_id  = data.splitsecure_vault.gcp_access.id
+  folder_id = splitsecure_vault_folder.gcp.id
+  name      = "Google Cloud federation issuer"
+  algs      = ["ES256"]
+
+  justification = "Issue tokens Google Cloud exchanges for service account tokens"
+}
+
+resource "google_iam_workload_identity_pool" "splitsecure" {
+  workload_identity_pool_id = var.pool_id
+  display_name              = "SplitSecure"
+
+  depends_on = [google_project_service.federation]
+}
+
+# The pool provider trusts the issuer, takes the audience of its own name, and maps the token subject.
+resource "google_iam_workload_identity_pool_provider" "splitsecure" {
+  workload_identity_pool_id          = google_iam_workload_identity_pool.splitsecure.workload_identity_pool_id
+  workload_identity_pool_provider_id = var.pool_provider_id
+  display_name                       = "SplitSecure issuer"
+
+  attribute_mapping = {
+    "google.subject" = "assertion.sub"
+  }
+
+  oidc {
+    issuer_uri        = splitsecure_oidc_issuer.gcp_federation.issuer
+    allowed_audiences = ["https://iam.googleapis.com/${local.pool_name}/providers/${var.pool_provider_id}"]
+  }
+}
+
+# The service account a token is exchanged for.
+resource "google_service_account" "federated" {
+  account_id   = var.service_account_id
+  display_name = "SplitSecure federated access"
+}
+
+resource "google_project_iam_member" "federated" {
+  project = var.project_id
+  role    = var.service_account_role
+  member  = google_service_account.federated.member
+}
+
+resource "splitsecure_connected_app" "gcp_service_account" {
+  issuer_vault_id = data.splitsecure_vault.gcp_access.id
+  issuer_id       = splitsecure_oidc_issuer.gcp_federation.id
+  template        = "oidc/gcp"
+  folder_id       = splitsecure_vault_folder.gcp.id
+  name            = "Google Cloud (${var.service_account_id})"
+
+  oidc {
+    key_id = one([for k in splitsecure_oidc_issuer.gcp_federation.keys : k.key_id if k.alg == "ES256"])
+  }
+
+  field {
+    name  = "project_number"
+    value = data.google_project.current.number
+  }
+
+  field {
+    name  = "pool_id"
+    value = google_iam_workload_identity_pool.splitsecure.workload_identity_pool_id
+  }
+
+  field {
+    name  = "provider_id"
+    value = google_iam_workload_identity_pool_provider.splitsecure.workload_identity_pool_provider_id
+  }
+
+  field {
+    name  = "service_account_email"
+    value = google_service_account.federated.email
+  }
+
+  # Each sign-in chooses how long the service account token lives.
+  field {
+    name = "access_token_lifetime"
+    duration_range {
+      min_seconds     = 300
+      max_seconds     = 3600
+      default_seconds = 3600
+    }
+  }
+
+  justification = "Let the team act as ${var.service_account_id}"
+}
+
+# Only tokens with the subject SplitSecure derived for this app can act as the service account.
+resource "google_service_account_iam_member" "token_exchange" {
+  service_account_id = google_service_account.federated.name
+  role               = "roles/iam.workloadIdentityUser"
+  member             = "principal://iam.googleapis.com/${local.pool_name}/subject/${splitsecure_connected_app.gcp_service_account.derived_values["subject"]}"
+}
+
+# Optional: let a principal or group use the app.
+resource "splitsecure_vault_grant" "app_use" {
+  count = var.grantee == "" ? 0 : 1
+
+  vault_id = data.splitsecure_vault.gcp_access.id
+  node_id  = splitsecure_connected_app.gcp_service_account.id
+  grantee  = var.grantee
+  tier     = "use"
+}
+```
+
+From the [`azure-saml`](https://github.com/splitsecure/terraform-provider-splitsecure/tree/main/examples/azure-saml) scenario:
+
+```terraform
+terraform {
+  required_version = ">= 1.11"
+
+  required_providers {
+    splitsecure = {
+      source = "splitsecure/splitsecure"
+    }
+    azuread = {
+      source  = "hashicorp/azuread"
+      version = ">= 3.0"
+    }
+    random = {
+      source  = "hashicorp/random"
+      version = ">= 3.0"
+    }
+  }
+}
+
+# Reads SPLITSECURE_ORG_S2R, SPLITSECURE_SERVICE_ACCOUNT_S2R, SPLITSECURE_KEY_ID
+# and SPLITSECURE_PRIVATE_KEY, and SPLITSECURE_ENDPOINT outside production.
+provider "splitsecure" {}
+
+# Reads the tenant and the credentials from the Azure CLI or the ARM_ environment variables.
+provider "azuread" {}
+
+data "splitsecure_vault" "azure_access" {
+  name = var.vault_name
+}
+
+# The verified domains of the tenant.
+data "azuread_domains" "verified" {}
+
+# The folder that holds the records. Deleting it moves anything left inside to lost+found.
+resource "splitsecure_vault_folder" "azure" {
+  vault_id  = data.splitsecure_vault.azure_access.id
+  name      = var.folder_name
+  parent_id = var.parent_folder_id == "" ? null : var.parent_folder_id
+}
+
+# The identity provider that signs every SAML assertion. Entra ID trusts it once the domain is federated.
+resource "splitsecure_saml2_identity_provider" "entra_domain" {
+  vault_id  = data.splitsecure_vault.azure_access.id
+  folder_id = splitsecure_vault_folder.azure.id
+  name      = "Entra ID sign-in (${var.domain})"
+
+  justification = "Sign in to Entra ID with SAML for ${var.domain}"
+}
+
+# Entra ID finds a federated user by the immutable id in the NameID.
+resource "random_uuid" "immutable_id" {}
+
+# Entra ID needs a password to create the user. Federated sign-in does not use it.
+resource "random_password" "unused" {
+  length  = 32
+  special = true
+}
+
+resource "azuread_user" "federated" {
+  user_principal_name     = "${var.user_name}@${var.domain}"
+  display_name            = var.display_name
+  mail_nickname           = var.user_name
+  onpremises_immutable_id = random_uuid.immutable_id.result
+  password                = random_password.unused.result
+
+  lifecycle {
+    precondition {
+      condition     = contains([for d in data.azuread_domains.verified.domains : d.domain_name], var.domain)
+      error_message = "The domain is not a verified domain of the tenant. Add and verify it in Entra ID first."
+    }
+  }
+}
+
+resource "splitsecure_connected_app" "entra_user" {
+  issuer_vault_id = data.splitsecure_vault.azure_access.id
+  issuer_id       = splitsecure_saml2_identity_provider.entra_domain.id
+  template        = "saml2/microsoft-entra-id"
+  folder_id       = splitsecure_vault_folder.azure.id
+  name            = "Entra ID (${azuread_user.federated.user_principal_name})"
+
+  # The service provider values from Microsoft's federation metadata.
+  saml2 {
+    entity_id = "urn:federation:MicrosoftOnline"
+    acs_url   = "https://login.microsoftonline.com/login.srf"
+  }
+
+  # A persistent NameID that holds the user's immutable id.
+  field {
+    name  = "name_id_format"
+    value = "urn:oasis:names:tc:SAML:2.0:nameid-format:persistent"
+  }
+
+  field {
+    name  = "name_id"
+    value = azuread_user.federated.onpremises_immutable_id
+  }
+
+  field {
+    name  = "user_principal_name"
+    value = azuread_user.federated.user_principal_name
+  }
+
+  justification = "Let the team sign in to Entra ID as ${azuread_user.federated.user_principal_name}"
+}
+
+# Optional: let a principal or group use the app.
+resource "splitsecure_vault_grant" "app_use" {
+  count = var.grantee == "" ? 0 : 1
+
+  vault_id = data.splitsecure_vault.azure_access.id
+  node_id  = splitsecure_connected_app.entra_user.id
+  grantee  = var.grantee
+  tier     = "use"
+}
+```
+
+From the [`azure-oidc`](https://github.com/splitsecure/terraform-provider-splitsecure/tree/main/examples/azure-oidc) scenario:
+
+```terraform
+terraform {
+  required_version = ">= 1.11"
+
+  required_providers {
+    splitsecure = {
+      source = "splitsecure/splitsecure"
+    }
+    azuread = {
+      source  = "hashicorp/azuread"
+      version = ">= 3.0"
+    }
+  }
+}
+
+# Reads SPLITSECURE_ORG_S2R, SPLITSECURE_SERVICE_ACCOUNT_S2R, SPLITSECURE_KEY_ID
+# and SPLITSECURE_PRIVATE_KEY, and SPLITSECURE_ENDPOINT outside production.
+provider "splitsecure" {}
+
+# Reads the tenant and the credentials from the Azure CLI or the ARM_ environment variables.
+provider "azuread" {}
+
+data "splitsecure_vault" "azure_access" {
+  name = var.vault_name
+}
+
+data "azuread_client_config" "current" {}
+
+# The folder that holds the records. Deleting it moves anything left inside to lost+found.
+resource "splitsecure_vault_folder" "azure" {
+  vault_id  = data.splitsecure_vault.azure_access.id
+  name      = var.folder_name
+  parent_id = var.parent_folder_id == "" ? null : var.parent_folder_id
+}
+
+# The issuer that signs every token. Entra ID takes an RS256 key only.
+resource "splitsecure_oidc_issuer" "entra_federation" {
+  vault_id  = data.splitsecure_vault.azure_access.id
+  folder_id = splitsecure_vault_folder.azure.id
+  name      = "Entra ID federation issuer"
+  algs      = ["RS256"]
+
+  justification = "Issue tokens Entra ID exchanges for application tokens"
+}
+
+# The application a token signs in as, and its service principal in the tenant.
+resource "azuread_application" "federated" {
+  display_name = var.application_name
+}
+
+resource "azuread_service_principal" "federated" {
+  client_id = azuread_application.federated.client_id
+}
+
+resource "splitsecure_connected_app" "entra_application" {
+  issuer_vault_id = data.splitsecure_vault.azure_access.id
+  issuer_id       = splitsecure_oidc_issuer.entra_federation.id
+  template        = "oidc/azure"
+  folder_id       = splitsecure_vault_folder.azure.id
+  name            = "Entra ID (${var.application_name})"
+
+  oidc {
+    key_id = one([for k in splitsecure_oidc_issuer.entra_federation.keys : k.key_id if k.alg == "RS256"])
+  }
+
+  field {
+    name  = "tenant_id"
+    value = data.azuread_client_config.current.tenant_id
+  }
+
+  field {
+    name  = "client_id"
+    value = azuread_application.federated.client_id
+  }
+
+  # Each sign-in chooses how long the token lives.
+  field {
+    name = "lifetime"
+    duration_range {
+      min_seconds     = 300
+      max_seconds     = 3600
+      default_seconds = 600
+    }
+  }
+
+  justification = "Let the team sign in as ${var.application_name}"
+}
+
+# Entra ID accepts a token whose issuer, subject and audience match this credential.
+resource "azuread_application_federated_identity_credential" "splitsecure" {
+  application_id = azuread_application.federated.id
+  display_name   = "splitsecure"
+  issuer         = splitsecure_oidc_issuer.entra_federation.issuer
+  subject        = splitsecure_connected_app.entra_application.derived_values["subject"]
+  audiences      = ["api://AzureADTokenExchange"]
+}
+
+# Optional: let a principal or group use the app.
+resource "splitsecure_vault_grant" "app_use" {
+  count = var.grantee == "" ? 0 : 1
+
+  vault_id = data.splitsecure_vault.azure_access.id
+  node_id  = splitsecure_connected_app.entra_application.id
+  grantee  = var.grantee
+  tier     = "use"
+}
+```
+
 <!-- schema generated by tfplugindocs -->
 ## Schema
 
