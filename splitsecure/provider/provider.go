@@ -142,6 +142,8 @@ func (p *splitsecureProvider) Resources(_ context.Context) []func() resource.Res
 	return []func() resource.Resource{
 		saml2.NewIdentityProviderResource,
 		oidc.NewIssuerResource,
+		vault.NewFolderResource,
+		vault.NewGrantResource,
 		connectedapp.NewConnectedAppResource,
 		org.NewGrant,
 		org.NewGroup,

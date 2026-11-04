@@ -59,6 +59,7 @@ type appModel struct {
 	NotificationPolicy types.String `tfsdk:"notification_policy"`
 	Sensitivity        types.String `tfsdk:"sensitivity"`
 	Folder             types.List   `tfsdk:"folder"`
+	FolderID           types.String `tfsdk:"folder_id"`
 	Justification      types.String `tfsdk:"justification"`
 	Wait               types.String `tfsdk:"wait"`
 	SAML2              types.List   `tfsdk:"saml2"`
@@ -186,7 +187,7 @@ func (r *appResource) Schema(_ context.Context, _ resource.SchemaRequest, resp *
 
 	resp.Schema = schema.Schema{
 		Description: "Connected app in a SplitSecure vault, built from a catalog template and bound to a SAML2 identity provider or an OIDC issuer. " +
-			"Creating or deleting it may need approval, and the call waits for it. There is no in-place update: changing any input replaces the resource.",
+			"Creating or deleting it may need approval, and the call waits for it. Changing the folder moves the record in place. Changing any other input replaces the resource.",
 		Attributes: attrs,
 		Blocks: map[string]schema.Block{
 			"saml2":   saml2Block(),
@@ -357,7 +358,7 @@ func (r *appResource) Create(ctx context.Context, req resource.CreateRequest, re
 
 	vaultID := plan.IssuerVaultID.ValueString()
 
-	parentID, ok := vaultres.EnsureFolder(ctx, r.client.VaultBrowse, vaultID, plan.Folder, &resp.Diagnostics)
+	parentID, ok := vaultres.ParentNode(ctx, r.client.VaultBrowse, vaultID, plan.Folder, plan.FolderID, &resp.Diagnostics)
 	if !ok {
 		return
 	}
@@ -442,12 +443,26 @@ func (r *appResource) Read(ctx context.Context, req resource.ReadRequest, resp *
 	resp.Diagnostics.Append(resp.State.Set(ctx, &state)...)
 }
 
-// Update is unreachable because every input forces replacement.
-func (r *appResource) Update(_ context.Context, _ resource.UpdateRequest, resp *resource.UpdateResponse) {
-	resp.Diagnostics.AddError(
-		"Update not supported",
-		"splitsecure_connected_app has no in-place update; every input forces replacement.",
-	)
+func (r *appResource) Update(ctx context.Context, req resource.UpdateRequest, resp *resource.UpdateResponse) {
+	var plan, state appModel
+
+	resp.Diagnostics.Append(req.Plan.Get(ctx, &plan)...)
+	resp.Diagnostics.Append(req.State.Get(ctx, &state)...)
+
+	if resp.Diagnostics.HasError() {
+		return
+	}
+
+	if !vaultres.MoveRecord(ctx, req, r.client.VaultBrowse, vaultres.Placement{
+		VaultID: state.VaultID.ValueString(), NodeID: state.ID.ValueString(), Folder: plan.Folder, FolderID: plan.FolderID,
+	}, &resp.Diagnostics) {
+		return
+	}
+
+	state.Folder = plan.Folder
+	state.FolderID = plan.FolderID
+
+	resp.Diagnostics.Append(resp.State.Set(ctx, &state)...)
 }
 
 func (r *appResource) Delete(ctx context.Context, req resource.DeleteRequest, resp *resource.DeleteResponse) {

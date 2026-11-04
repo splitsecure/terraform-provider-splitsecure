@@ -28,11 +28,18 @@ data "aws_iam_policy" "read_only_access" {
   name = "ReadOnlyAccess"
 }
 
+# The folder that holds the records. Deleting it moves anything left inside to lost+found.
+resource "splitsecure_vault_folder" "aws" {
+  vault_id  = data.splitsecure_vault.aws_access.id
+  name      = var.folder_name
+  parent_id = var.parent_folder_id == "" ? null : var.parent_folder_id
+}
+
 # The identity provider that signs every SAML assertion.
 resource "splitsecure_saml2_identity_provider" "aws_console" {
-  vault_id = data.splitsecure_vault.aws_access.id
-  folder   = var.folder
-  name     = "AWS console sign-in"
+  vault_id  = data.splitsecure_vault.aws_access.id
+  folder_id = splitsecure_vault_folder.aws.id
+  name      = "AWS console sign-in"
 
   justification = "Sign in to the AWS console with SAML"
 }
@@ -76,7 +83,7 @@ resource "splitsecure_connected_app" "aws_console" {
   issuer_vault_id = data.splitsecure_vault.aws_access.id
   issuer_id       = splitsecure_saml2_identity_provider.aws_console.id
   template        = "saml2/aws"
-  folder          = var.folder
+  folder_id       = splitsecure_vault_folder.aws.id
   name            = "AWS console (${var.role_name})"
 
   saml2 {
@@ -126,4 +133,14 @@ resource "splitsecure_connected_app" "aws_console" {
   }
 
   justification = "Let the team sign in to the ${var.role_name} role"
+}
+
+# Optional: let a principal or group use the app.
+resource "splitsecure_vault_grant" "app_use" {
+  count = var.grantee == "" ? 0 : 1
+
+  vault_id = data.splitsecure_vault.aws_access.id
+  node_id  = splitsecure_connected_app.aws_console.id
+  grantee  = var.grantee
+  tier     = "use"
 }

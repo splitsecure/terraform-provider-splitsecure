@@ -93,3 +93,19 @@ func createFolder(ctx context.Context, c vaultbrowsev1connect.VaultBrowseService
 
 	return resp.Msg.GetNodeId(), nil
 }
+
+// MoveNode moves a node under parentID, or under the vault root when parentID is empty.
+func MoveNode(ctx context.Context, c vaultbrowsev1connect.VaultBrowseServiceClient, vaultID, nodeID, parentID string) error {
+	base := &vaultbrowsev1.MoveNodeRequest_Base{VaultId: vaultID, NodeId: nodeID}
+
+	if parentID != "" {
+		base.Locator = &vaultbrowsev1.NodeLocator{Union: &vaultbrowsev1.NodeLocator_ParentNodeId{ParentNodeId: parentID}}
+	}
+
+	_, err := c.MoveNode(ctx, connect.NewRequest(&vaultbrowsev1.MoveNodeRequest{Base: base}))
+	if err != nil {
+		return fmt.Errorf("moving node: %w", err)
+	}
+
+	return nil
+}

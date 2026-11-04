@@ -376,3 +376,160 @@ func TestIssuerRead_RemovesGoneRecord(t *testing.T) {
 		t.Errorf("state should be removed when the record is gone; diags = %v", resp.Diagnostics)
 	}
 }
+
+type placementHarness struct {
+	r     *issuerResource
+	tree  *vaultfake.FolderTree
+	moves []*vaultbrowsev1.MoveNodeRequest
+	opens int
+	state tfsdk.State
+}
+
+// newPlacementHarness creates an issuer in terraform/prod, then counts every create, delete and move after that.
+func newPlacementHarness(ctx context.Context, t *testing.T) *placementHarness {
+	t.Helper()
+
+	h := &placementHarness{tree: &vaultfake.FolderTree{Existing: map[string]string{"terraform": "id-terraform"}}}
+
+	var (
+		created *vaultusev1.CreateWIFAuthorityRequest
+		deleted *vaultusev1.DeleteRequest
+	)
+
+	use := issuerUse(false, &created, &deleted)
+	create := use.OnCreateWIFAuthority
+	use.OnCreateWIFAuthority = func(req *vaultusev1.CreateWIFAuthorityRequest) (*vaultusev1.CreateWIFAuthorityResponse, error) {
+		h.opens++
+
+		return create(req)
+	}
+	del := use.OnDelete
+	use.OnDelete = func(req *vaultusev1.DeleteRequest) (*vaultusev1.DeleteResponse, error) {
+		h.opens++
+
+		return del(req)
+	}
+
+	browse := &vaultfake.Browse{OnGetRecord: issuerRecordHandler(t)}
+	h.tree.Attach(browse)
+	browse.OnMoveNode = func(req *vaultbrowsev1.MoveNodeRequest) (*vaultbrowsev1.MoveNodeResponse, error) {
+		h.moves = append(h.moves, req)
+
+		return &vaultbrowsev1.MoveNodeResponse{}, nil
+	}
+
+	h.r = &issuerResource{client: vaultfake.New(t, vaultfake.Handlers{Use: use, Browse: browse})}
+	h.state = createIssuer(ctx, t, h.r)
+	h.opens = 0
+
+	return h
+}
+
+// update plans the state's model with mutate applied and runs Update.
+func (h *placementHarness) update(ctx context.Context, t *testing.T, mutate func(*issuerModel)) {
+	t.Helper()
+
+	var model issuerModel
+
+	if diags := h.state.Get(ctx, &model); diags.HasError() {
+		t.Fatalf("reading state: %v", diags)
+	}
+
+	mutate(&model)
+
+	plan := tfsdk.Plan{Schema: h.state.Schema, Raw: h.state.Raw}
+	if diags := plan.Set(ctx, &model); diags.HasError() {
+		t.Fatalf("building plan: %v", diags)
+	}
+
+	resp := &resource.UpdateResponse{State: h.state}
+	h.r.Update(ctx, resource.UpdateRequest{Plan: plan, State: h.state}, resp)
+
+	if resp.Diagnostics.HasError() {
+		t.Fatalf("Update: %v", resp.Diagnostics)
+	}
+
+	h.state = resp.State
+}
+
+func TestIssuerUpdate_MovesRecordToFolderIDInPlace(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	h := newPlacementHarness(ctx, t)
+
+	h.update(ctx, t, func(m *issuerModel) {
+		m.Folder = types.ListNull(types.StringType)
+		m.FolderID = types.StringValue("f-new")
+	})
+
+	if len(h.moves) != 1 || h.moves[0].GetBase().GetNodeId() != "node-1" || h.moves[0].GetBase().GetVaultId() != "vault-1" || h.moves[0].GetBase().GetLocator().GetParentNodeId() != "f-new" {
+		t.Errorf("moves = %v", h.moves)
+	}
+
+	if h.opens != 0 {
+		t.Errorf("update created or deleted a record %d times", h.opens)
+	}
+
+	var got issuerModel
+
+	h.state.Get(ctx, &got)
+
+	if got.FolderID.ValueString() != "f-new" || got.ID.ValueString() != "node-1" {
+		t.Errorf("state = %+v", got)
+	}
+}
+
+func TestIssuerUpdate_CreatesMissingPathThenMoves(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	h := newPlacementHarness(ctx, t)
+
+	h.update(ctx, t, func(m *issuerModel) {
+		m.Folder = types.ListValueMust(types.StringType, []attr.Value{types.StringValue("terraform"), types.StringValue("staging")})
+	})
+
+	if !slices.Equal(h.tree.Created(), []string{"prod", "staging"}) || len(h.moves) != 1 || h.moves[0].GetBase().GetLocator().GetParentNodeId() != "new-staging" {
+		t.Errorf("created = %v, moves = %v", h.tree.Created(), h.moves)
+	}
+}
+
+func TestIssuerUpdate_MovesBackToRootWithUnsetLocator(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	h := newPlacementHarness(ctx, t)
+
+	h.update(ctx, t, func(m *issuerModel) {
+		m.Folder = types.ListNull(types.StringType)
+		m.FolderID = types.StringNull()
+	})
+
+	if len(h.moves) != 1 || h.moves[0].GetBase().GetLocator() != nil {
+		t.Errorf("moves = %v, want one move with an unset locator", h.moves)
+	}
+}
+
+func TestIssuerUpdate_RefusesAChangeBeyondPlacement(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	h := newPlacementHarness(ctx, t)
+
+	var model issuerModel
+
+	h.state.Get(ctx, &model)
+
+	model.Name = types.StringValue("renamed")
+
+	plan := tfsdk.Plan{Schema: h.state.Schema, Raw: h.state.Raw}
+	plan.Set(ctx, &model)
+
+	resp := &resource.UpdateResponse{State: h.state}
+	h.r.Update(ctx, resource.UpdateRequest{Plan: plan, State: h.state}, resp)
+
+	if !resp.Diagnostics.HasError() || len(h.moves) != 0 {
+		t.Errorf("a name change should be refused; moves = %v", h.moves)
+	}
+}

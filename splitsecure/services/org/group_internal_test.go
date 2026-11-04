@@ -9,11 +9,16 @@ import (
 	"testing"
 
 	"connectrpc.com/connect"
+	"github.com/hashicorp/terraform-plugin-framework/datasource"
+	dschema "github.com/hashicorp/terraform-plugin-framework/datasource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
+	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	rschema "github.com/hashicorp/terraform-plugin-framework/resource/schema"
+	"github.com/hashicorp/terraform-plugin-framework/schema/validator"
 	"github.com/hashicorp/terraform-plugin-framework/tfsdk"
 	"github.com/hashicorp/terraform-plugin-framework/types"
+	"github.com/hashicorp/terraform-plugin-go/tftypes"
 
 	orgsvcv1 "github.com/splitsecure/apis/gen/go/proto/splitsecure/orgsvc/v1"
 	"github.com/splitsecure/apis/gen/go/proto/splitsecure/orgsvc/v1/orgsvcv1connect"
@@ -35,6 +40,7 @@ type fakeOrgClient struct {
 	listMembers []*orgsvcv1.GroupMember
 	listPages   [][]*orgsvcv1.GroupMember // when set, ListGroupMembers serves these pages via cursor
 	listErr     error
+	groupPages  [][]*orgsvcv1.Group // when set, ListGroups serves these pages via cursor
 }
 
 func (f *fakeOrgClient) RemoveGroupMember(
@@ -711,4 +717,138 @@ func groupStateForRead(t *testing.T, s rschema.Schema, model groupResourceModel)
 	}
 
 	return state
+}
+
+func (f *fakeOrgClient) ListGroups(
+	_ context.Context, req *connect.Request[orgsvcv1.ListGroupsRequest],
+) (*connect.Response[orgsvcv1.ListGroupsResponse], error) {
+	page := 0
+	if cursor := req.Msg.GetPage().GetDirectionOrCursor().GetCursor(); len(cursor) > 0 {
+		page = int(cursor[0])
+	}
+
+	resp := &orgsvcv1.ListGroupsResponse{Groups: f.groupPages[page]}
+	if page+1 < len(f.groupPages) {
+		resp.NextCursor = []byte{byte(page + 1)}
+	}
+
+	return connect.NewResponse(resp), nil
+}
+
+func namedGroups(pages ...[]*orgsvcv1.Group) *groupDataSource {
+	return &groupDataSource{client: &client.Client{
+		OrgService: &fakeOrgClient{groupPages: pages},
+		OrgS2R:     "s2r:test:org:x",
+	}}
+}
+
+func grp(s2r, name string, source orgsvcv1.GroupSource) *orgsvcv1.Group {
+	return &orgsvcv1.Group{GroupS2R: s2r, Name: name, Source: source}
+}
+
+func TestGroupDataSource_FindByName_MatchesAcrossPages(t *testing.T) {
+	t.Parallel()
+
+	d := namedGroups(
+		[]*orgsvcv1.Group{grp("g1", "ops", orgsvcv1.GroupSource_GROUP_SOURCE_LOCAL)},
+		[]*orgsvcv1.Group{grp("g2", "sre", orgsvcv1.GroupSource_GROUP_SOURCE_SCIM)},
+	)
+
+	got, err := d.findByName(context.Background(), "sre", "")
+	if err != nil || got.GetGroupS2R() != "g2" {
+		t.Fatalf("got %v, err %v", got, err)
+	}
+}
+
+func TestGroupDataSource_FindByName_ErrorsOnNoMatch(t *testing.T) {
+	t.Parallel()
+
+	d := namedGroups([]*orgsvcv1.Group{grp("g1", "ops", orgsvcv1.GroupSource_GROUP_SOURCE_LOCAL)})
+
+	_, err := d.findByName(context.Background(), "sre", "")
+	if !errors.Is(err, errGroupNotFound) {
+		t.Fatalf("err = %v, want errGroupNotFound", err)
+	}
+}
+
+func TestGroupDataSource_FindByName_ErrorsOnTwoMatches(t *testing.T) {
+	t.Parallel()
+
+	d := namedGroups(
+		[]*orgsvcv1.Group{grp("g1", "ops", orgsvcv1.GroupSource_GROUP_SOURCE_LOCAL)},
+		[]*orgsvcv1.Group{grp("g2", "ops", orgsvcv1.GroupSource_GROUP_SOURCE_SCIM)},
+	)
+
+	_, err := d.findByName(context.Background(), "ops", "")
+	if !errors.Is(err, errAmbiguousGroup) {
+		t.Fatalf("err = %v, want errAmbiguousGroup", err)
+	}
+}
+
+func TestGroupDataSource_FindByName_SourceSplitsDuplicateName(t *testing.T) {
+	t.Parallel()
+
+	d := namedGroups([]*orgsvcv1.Group{
+		grp("g1", "ops", orgsvcv1.GroupSource_GROUP_SOURCE_LOCAL),
+		grp("g2", "ops", orgsvcv1.GroupSource_GROUP_SOURCE_SCIM),
+	})
+
+	for source, want := range map[string]string{"local": "g1", "scim": "g2"} {
+		got, err := d.findByName(context.Background(), "ops", source)
+		if err != nil || got.GetGroupS2R() != want {
+			t.Errorf("source %q: got %v, err %v, want %s", source, got, err, want)
+		}
+	}
+}
+
+func TestGroupDataSource_SchemaRefusesBothOrNeitherOfS2RAndName(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+
+	resp := &datasource.SchemaResponse{}
+	NewGroupDataSource().Schema(ctx, datasource.SchemaRequest{}, resp)
+
+	attr, ok := resp.Schema.Attributes["group_s2r"].(dschema.StringAttribute)
+	if !ok {
+		t.Fatal("group_s2r is not a string attribute")
+	}
+
+	for name, tc := range map[string]struct {
+		s2r, name types.String
+		wantErr   bool
+	}{
+		"s2r only":  {types.StringValue("g1"), types.StringNull(), false},
+		"name only": {types.StringNull(), types.StringValue("ops"), false},
+		"both":      {types.StringValue("g1"), types.StringValue("ops"), true},
+		"neither":   {types.StringNull(), types.StringNull(), true},
+	} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			state := tfsdk.State{Schema: resp.Schema, Raw: tftypes.NewValue(resp.Schema.Type().TerraformType(ctx), nil)}
+
+			model := groupDataSourceModel{GroupS2R: tc.s2r, Name: tc.name, Source: types.StringNull()}
+			if diags := state.Set(ctx, &model); diags.HasError() {
+				t.Fatalf("building config: %v", diags)
+			}
+
+			var diags diag.Diagnostics
+
+			for _, v := range attr.Validators {
+				vr := &validator.StringResponse{}
+				v.ValidateString(ctx, validator.StringRequest{
+					Path:           path.Root("group_s2r"),
+					PathExpression: path.MatchRoot("group_s2r"),
+					Config:         tfsdk.Config{Schema: resp.Schema, Raw: state.Raw},
+					ConfigValue:    tc.s2r,
+				}, vr)
+				diags.Append(vr.Diagnostics...)
+			}
+
+			if diags.HasError() != tc.wantErr {
+				t.Errorf("errors = %v, want error %v", diags, tc.wantErr)
+			}
+		})
+	}
 }

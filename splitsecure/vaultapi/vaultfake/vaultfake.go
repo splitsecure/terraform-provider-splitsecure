@@ -112,6 +112,13 @@ type Browse struct {
 	OnListNodes     func(*vaultbrowsev1.ListNodesRequest) (*vaultbrowsev1.ListNodesResponse, error)
 	OnDescribeVault func(*vaultbrowsev1.DescribeVaultRequest) (*vaultbrowsev1.DescribeVaultResponse, error)
 	OnCreateFolder  func(*vaultbrowsev1.CreateFolderRequest) (*vaultbrowsev1.CreateFolderResponse, error)
+	OnGetNode       func(*vaultbrowsev1.GetNodeRequest) (*vaultbrowsev1.GetNodeResponse, error)
+	OnMoveNode      func(*vaultbrowsev1.MoveNodeRequest) (*vaultbrowsev1.MoveNodeResponse, error)
+	OnRenameNode    func(*vaultbrowsev1.RenameNodeRequest) (*vaultbrowsev1.RenameNodeResponse, error)
+	OnDeleteFolder  func(*vaultbrowsev1.DeleteFolderRequest) (*vaultbrowsev1.DeleteFolderResponse, error)
+	OnPutGrants     func(*vaultbrowsev1.PutGrantsRequest) (*vaultbrowsev1.PutGrantsResponse, error)
+	OnDeleteGrant   func(*vaultbrowsev1.DeleteGrantRequest) (*vaultbrowsev1.DeleteGrantResponse, error)
+	OnListGrants    func(*vaultbrowsev1.ListGrantsRequest) (*vaultbrowsev1.ListGrantsResponse, error)
 }
 
 // GetRecord implements vaultbrowsev1connect.VaultBrowseServiceHandler.
@@ -304,6 +311,104 @@ func (b *Browse) CreateFolder(ctx context.Context, req *connect.Request[vaultbro
 	}
 
 	resp, err := b.OnCreateFolder(req.Msg)
+	if err != nil {
+		return nil, err
+	}
+
+	return connect.NewResponse(resp), nil
+}
+
+// GetNode implements vaultbrowsev1connect.VaultBrowseServiceHandler.
+func (b *Browse) GetNode(ctx context.Context, req *connect.Request[vaultbrowsev1.GetNodeRequest]) (*connect.Response[vaultbrowsev1.GetNodeResponse], error) {
+	if b.OnGetNode == nil {
+		return b.UnimplementedVaultBrowseServiceHandler.GetNode(ctx, req)
+	}
+
+	resp, err := b.OnGetNode(req.Msg)
+	if err != nil {
+		return nil, err
+	}
+
+	return connect.NewResponse(resp), nil
+}
+
+// MoveNode implements vaultbrowsev1connect.VaultBrowseServiceHandler.
+func (b *Browse) MoveNode(ctx context.Context, req *connect.Request[vaultbrowsev1.MoveNodeRequest]) (*connect.Response[vaultbrowsev1.MoveNodeResponse], error) {
+	if b.OnMoveNode == nil {
+		return b.UnimplementedVaultBrowseServiceHandler.MoveNode(ctx, req)
+	}
+
+	resp, err := b.OnMoveNode(req.Msg)
+	if err != nil {
+		return nil, err
+	}
+
+	return connect.NewResponse(resp), nil
+}
+
+// RenameNode implements vaultbrowsev1connect.VaultBrowseServiceHandler.
+func (b *Browse) RenameNode(ctx context.Context, req *connect.Request[vaultbrowsev1.RenameNodeRequest]) (*connect.Response[vaultbrowsev1.RenameNodeResponse], error) {
+	if b.OnRenameNode == nil {
+		return b.UnimplementedVaultBrowseServiceHandler.RenameNode(ctx, req)
+	}
+
+	resp, err := b.OnRenameNode(req.Msg)
+	if err != nil {
+		return nil, err
+	}
+
+	return connect.NewResponse(resp), nil
+}
+
+// DeleteFolder implements vaultbrowsev1connect.VaultBrowseServiceHandler.
+func (b *Browse) DeleteFolder(ctx context.Context, req *connect.Request[vaultbrowsev1.DeleteFolderRequest]) (*connect.Response[vaultbrowsev1.DeleteFolderResponse], error) {
+	if b.OnDeleteFolder == nil {
+		return b.UnimplementedVaultBrowseServiceHandler.DeleteFolder(ctx, req)
+	}
+
+	resp, err := b.OnDeleteFolder(req.Msg)
+	if err != nil {
+		return nil, err
+	}
+
+	return connect.NewResponse(resp), nil
+}
+
+// PutGrants implements vaultbrowsev1connect.VaultBrowseServiceHandler.
+func (b *Browse) PutGrants(ctx context.Context, req *connect.Request[vaultbrowsev1.PutGrantsRequest]) (*connect.Response[vaultbrowsev1.PutGrantsResponse], error) {
+	if b.OnPutGrants == nil {
+		return b.UnimplementedVaultBrowseServiceHandler.PutGrants(ctx, req)
+	}
+
+	resp, err := b.OnPutGrants(req.Msg)
+	if err != nil {
+		return nil, err
+	}
+
+	return connect.NewResponse(resp), nil
+}
+
+// DeleteGrant implements vaultbrowsev1connect.VaultBrowseServiceHandler.
+func (b *Browse) DeleteGrant(ctx context.Context, req *connect.Request[vaultbrowsev1.DeleteGrantRequest]) (*connect.Response[vaultbrowsev1.DeleteGrantResponse], error) {
+	if b.OnDeleteGrant == nil {
+		return b.UnimplementedVaultBrowseServiceHandler.DeleteGrant(ctx, req)
+	}
+
+	resp, err := b.OnDeleteGrant(req.Msg)
+	if err != nil {
+		return nil, err
+	}
+
+	return connect.NewResponse(resp), nil
+}
+
+// ListGrants implements vaultbrowsev1connect.VaultBrowseServiceHandler.
+func (b *Browse) ListGrants(ctx context.Context, req *connect.Request[vaultbrowsev1.ListGrantsRequest]) (*connect.Response[vaultbrowsev1.ListGrantsResponse], error) {
+	if b.OnListGrants == nil {
+		return b.UnimplementedVaultBrowseServiceHandler.ListGrants(ctx, req)
+	}
+
+	resp, err := b.OnListGrants(req.Msg)
 	if err != nil {
 		return nil, err
 	}

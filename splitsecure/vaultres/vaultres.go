@@ -12,7 +12,6 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
-	"github.com/hashicorp/terraform-plugin-framework/resource/schema/listplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringdefault"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
@@ -97,12 +96,18 @@ func CommonAttributes(kind string) map[string]schema.Attribute {
 			ElementType: types.StringType,
 			Optional:    true,
 			Description: "Folder path from the vault root to place the " + kind + " in, for example [\"terraform\", \"prod\"]. " +
-				"Missing folders are created. Unset places it at the vault root. Changing it replaces the resource.",
-			PlanModifiers: []planmodifier.List{
-				listplanmodifier.RequiresReplace(),
-			},
+				"Missing folders are created. Unset places it at the vault root. Changing it moves the record.",
 			Validators: []validator.List{
 				listvalidator.ValueStringsAre(stringvalidator.LengthAtLeast(1)),
+			},
+		},
+		"folder_id": schema.StringAttribute{
+			Optional: true,
+			Description: "Node id of an existing folder to place the " + kind + " in, such as the id of a splitsecure_vault_folder. " +
+				"Set at most one of folder and folder_id. Changing it moves the record.",
+			Validators: []validator.String{
+				stringvalidator.LengthAtLeast(1),
+				stringvalidator.ConflictsWith(path.MatchRoot("folder")),
 			},
 		},
 		"sensitivity": schema.StringAttribute{
@@ -214,8 +219,12 @@ func DestroyOptions(kind, name string) *vaultusev1.WriteOptions {
 	return &vaultusev1.WriteOptions{Justification: fmt.Sprintf("terraform destroy of %s %q", kind, name)}
 }
 
-// EnsureFolder creates the folder path configured on a resource and returns its node id, or "" for the vault root.
-func EnsureFolder(ctx context.Context, browse vaultbrowsev1connect.VaultBrowseServiceClient, vaultID string, folder types.List, diags *diag.Diagnostics) (string, bool) {
+// ParentNode returns the node id a record is placed under: folder_id as given, else the folder path with missing folders created, else "" for the vault root.
+func ParentNode(ctx context.Context, browse vaultbrowsev1connect.VaultBrowseServiceClient, vaultID string, folder types.List, folderID types.String, diags *diag.Diagnostics) (string, bool) {
+	if folderID.ValueString() != "" {
+		return folderID.ValueString(), true
+	}
+
 	var segments []string
 
 	diags.Append(folder.ElementsAs(ctx, &segments, false)...)

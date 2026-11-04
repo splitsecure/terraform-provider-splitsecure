@@ -45,6 +45,7 @@ type saml2IdentityProviderModel struct {
 	NotificationPolicy    types.String `tfsdk:"notification_policy"`
 	Sensitivity           types.String `tfsdk:"sensitivity"`
 	Folder                types.List   `tfsdk:"folder"`
+	FolderID              types.String `tfsdk:"folder_id"`
 	Justification         types.String `tfsdk:"justification"`
 	Wait                  types.String `tfsdk:"wait"`
 	ProviderID            types.String `tfsdk:"provider_id"`
@@ -110,7 +111,7 @@ func (r *saml2IdentityProvider) Schema(_ context.Context, _ resource.SchemaReque
 
 	resp.Schema = schema.Schema{
 		Description: "SAML2 identity provider in a SplitSecure vault. Creating or deleting it may need approval, and the call waits for it. " +
-			"There is no in-place update: changing any input replaces the resource.",
+			"Changing the folder moves the record in place. Changing any other input replaces the resource.",
 		Attributes: attrs,
 	}
 }
@@ -129,7 +130,7 @@ func (r *saml2IdentityProvider) Create(ctx context.Context, req resource.CreateR
 		return
 	}
 
-	parentID, ok := vaultres.EnsureFolder(ctx, r.client.VaultBrowse, plan.VaultID.ValueString(), plan.Folder, &resp.Diagnostics)
+	parentID, ok := vaultres.ParentNode(ctx, r.client.VaultBrowse, plan.VaultID.ValueString(), plan.Folder, plan.FolderID, &resp.Diagnostics)
 	if !ok {
 		return
 	}
@@ -226,12 +227,26 @@ func (r *saml2IdentityProvider) Read(ctx context.Context, req resource.ReadReque
 	resp.Diagnostics.Append(resp.State.Set(ctx, &state)...)
 }
 
-// Update is unreachable because every input forces replacement.
-func (r *saml2IdentityProvider) Update(_ context.Context, _ resource.UpdateRequest, resp *resource.UpdateResponse) {
-	resp.Diagnostics.AddError(
-		"Update not supported",
-		"splitsecure_saml2_identity_provider has no in-place update; every input forces replacement.",
-	)
+func (r *saml2IdentityProvider) Update(ctx context.Context, req resource.UpdateRequest, resp *resource.UpdateResponse) {
+	var plan, state saml2IdentityProviderModel
+
+	resp.Diagnostics.Append(req.Plan.Get(ctx, &plan)...)
+	resp.Diagnostics.Append(req.State.Get(ctx, &state)...)
+
+	if resp.Diagnostics.HasError() {
+		return
+	}
+
+	if !vaultres.MoveRecord(ctx, req, r.client.VaultBrowse, vaultres.Placement{
+		VaultID: state.VaultID.ValueString(), NodeID: state.ID.ValueString(), Folder: plan.Folder, FolderID: plan.FolderID,
+	}, &resp.Diagnostics) {
+		return
+	}
+
+	state.Folder = plan.Folder
+	state.FolderID = plan.FolderID
+
+	resp.Diagnostics.Append(resp.State.Set(ctx, &state)...)
 }
 
 func (r *saml2IdentityProvider) Delete(ctx context.Context, req resource.DeleteRequest, resp *resource.DeleteResponse) {

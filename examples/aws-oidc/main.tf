@@ -44,12 +44,19 @@ locals {
   issuer_host = trimprefix(splitsecure_oidc_issuer.aws_federation.issuer, "https://")
 }
 
+# The folder that holds the records. Deleting it moves anything left inside to lost+found.
+resource "splitsecure_vault_folder" "aws" {
+  vault_id  = data.splitsecure_vault.aws_access.id
+  name      = var.folder_name
+  parent_id = var.parent_folder_id == "" ? null : var.parent_folder_id
+}
+
 # The issuer that signs every token. AWS takes ES256 and ES384 keys.
 resource "splitsecure_oidc_issuer" "aws_federation" {
-  vault_id = data.splitsecure_vault.aws_access.id
-  folder   = var.folder
-  name     = "AWS federation issuer"
-  algs     = ["ES256"]
+  vault_id  = data.splitsecure_vault.aws_access.id
+  folder_id = splitsecure_vault_folder.aws.id
+  name      = "AWS federation issuer"
+  algs      = ["ES256"]
 
   justification = "Issue tokens AWS exchanges for role sessions"
 }
@@ -68,7 +75,7 @@ resource "splitsecure_connected_app" "aws_session" {
   issuer_vault_id = data.splitsecure_vault.aws_access.id
   issuer_id       = splitsecure_oidc_issuer.aws_federation.id
   template        = "oidc/aws"
-  folder          = var.folder
+  folder_id       = splitsecure_vault_folder.aws.id
   name            = "AWS role session (${var.role_name})"
 
   oidc {
@@ -134,4 +141,14 @@ resource "aws_iam_role" "session_read_only" {
 resource "aws_iam_role_policy_attachment" "session_read_only" {
   role       = aws_iam_role.session_read_only.name
   policy_arn = data.aws_iam_policy.read_only_access.arn
+}
+
+# Optional: let a principal or group use the app.
+resource "splitsecure_vault_grant" "app_use" {
+  count = var.grantee == "" ? 0 : 1
+
+  vault_id = data.splitsecure_vault.aws_access.id
+  node_id  = splitsecure_connected_app.aws_session.id
+  grantee  = var.grantee
+  tier     = "use"
 }
