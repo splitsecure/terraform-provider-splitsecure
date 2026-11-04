@@ -17,7 +17,7 @@ variable "folder" {
 variable "role_name" {
   description = "Name of the IAM role the app signs in to."
   type        = string
-  default     = "SplitSecureOps"
+  default     = "SplitSecureConsoleReadOnly"
 }
 
 variable "team_tag" {

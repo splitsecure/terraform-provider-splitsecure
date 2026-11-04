@@ -37,31 +37,31 @@ provider "aws" {
   region = var.aws_region
 }
 
-data "splitsecure_vault" "main" {
+data "splitsecure_vault" "aws_access" {
   name = var.vault_name
 }
 
-data "aws_iam_policy" "read_only" {
+data "aws_iam_policy" "read_only_access" {
   name = "ReadOnlyAccess"
 }
 
 # The identity provider that signs every SAML assertion.
-resource "splitsecure_saml2_identity_provider" "aws" {
-  vault_id = data.splitsecure_vault.main.id
+resource "splitsecure_saml2_identity_provider" "aws_console" {
+  vault_id = data.splitsecure_vault.aws_access.id
   folder   = var.folder
-  name     = "aws-saml"
+  name     = "AWS console sign-in"
 
-  justification = "Sign in to AWS with SAML"
+  justification = "Sign in to the AWS console with SAML"
 }
 
 # AWS trusts the identity provider through its metadata.
 resource "aws_iam_saml_provider" "splitsecure" {
-  name                   = "splitsecure"
-  saml_metadata_document = splitsecure_saml2_identity_provider.aws.metadata_xml
+  name                   = "SplitSecure"
+  saml_metadata_document = splitsecure_saml2_identity_provider.aws_console.metadata_xml
 }
 
 # The app carries principal tags, so the trust policy allows sts:TagSession.
-data "aws_iam_policy_document" "trust" {
+data "aws_iam_policy_document" "assume_with_saml" {
   statement {
     actions = ["sts:AssumeRoleWithSAML", "sts:TagSession"]
 
@@ -78,23 +78,23 @@ data "aws_iam_policy_document" "trust" {
   }
 }
 
-resource "aws_iam_role" "ops" {
+resource "aws_iam_role" "console_read_only" {
   name                 = var.role_name
-  assume_role_policy   = data.aws_iam_policy_document.trust.json
+  assume_role_policy   = data.aws_iam_policy_document.assume_with_saml.json
   max_session_duration = 3600
 }
 
-resource "aws_iam_role_policy_attachment" "read_only" {
-  role       = aws_iam_role.ops.name
-  policy_arn = data.aws_iam_policy.read_only.arn
+resource "aws_iam_role_policy_attachment" "console_read_only" {
+  role       = aws_iam_role.console_read_only.name
+  policy_arn = data.aws_iam_policy.read_only_access.arn
 }
 
-resource "splitsecure_connected_app" "aws" {
-  issuer_vault_id = data.splitsecure_vault.main.id
-  issuer_id       = splitsecure_saml2_identity_provider.aws.id
+resource "splitsecure_connected_app" "aws_console" {
+  issuer_vault_id = data.splitsecure_vault.aws_access.id
+  issuer_id       = splitsecure_saml2_identity_provider.aws_console.id
   template        = "saml2/aws"
   folder          = var.folder
-  name            = "aws-${var.role_name}"
+  name            = "AWS console (${var.role_name})"
 
   saml2 {
     entity_id = "urn:amazon:webservices"
@@ -103,7 +103,7 @@ resource "splitsecure_connected_app" "aws" {
 
   field {
     name  = "role_arn"
-    value = aws_iam_role.ops.arn
+    value = aws_iam_role.console_read_only.arn
   }
 
   field {
@@ -131,7 +131,7 @@ resource "splitsecure_connected_app" "aws" {
     name = "session_duration"
     duration_range {
       min_seconds     = 900
-      max_seconds     = aws_iam_role.ops.max_session_duration
+      max_seconds     = aws_iam_role.console_read_only.max_session_duration
       default_seconds = 1800
     }
   }

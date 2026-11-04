@@ -17,7 +17,7 @@ variable "folder" {
 variable "role_name" {
   description = "Name of the IAM role the app signs in to. The app names it before it exists."
   type        = string
-  default     = "SplitSecureOps"
+  default     = "SplitSecureSessionReadOnly"
 }
 
 variable "max_session_seconds" {
