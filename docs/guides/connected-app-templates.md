@@ -7,7 +7,7 @@ description: |-
 
 # Connected app templates
 
-Set `template` on a `splitsecure_connected_app` to one of the templates on this page. A SAML template takes a `saml2` block. An OIDC template takes an `oidc` block. Each `field` block sets one field of the template. Fields that the template fills itself are marked in the tables, and you do not set them.
+Set `template` on a `splitsecure_connected_app` to one of the templates on this page. A SAML template takes a `saml2` block, with `entity_id` and `acs_url` or with the `metadata_xml` of the service provider. An OIDC template takes an `oidc` block. Each `field` block sets one field of the template. Fields that the template fills itself are marked in the tables, and you do not set them.
 
 ## Field sources
 
@@ -20,6 +20,7 @@ A field block sets exactly one source.
 | Fixed duration | `seconds = 3600` |
 | Fixed JSON object | `json = jsonencode({...})` |
 | Text that the requester chooses at each sign-in | `choices = ["..."]`, and optionally `default_value` |
+| Text that the requester types at each sign-in, within limits | an `affix` block with `prefix`, `suffix` or `max_length`, and optionally `default_value` |
 | List that the requester chooses from at each sign-in | `choices = ["..."]`, and optionally `default_values` |
 | Duration that the requester chooses at each sign-in | a `duration_range` block with `min_seconds`, `max_seconds`, and optionally `default_seconds` |
 | The identity of the requester | `requester = "email"` or `requester = "session_name"`, and optionally `suffix` |

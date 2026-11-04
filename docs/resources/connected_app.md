@@ -852,14 +852,14 @@ resource "splitsecure_vault_grant" "app_use" {
 > **NOTE**: [Write-only arguments](https://developer.hashicorp.com/terraform/language/resources/ephemeral#write-only-arguments) are supported in Terraform 1.11 and later.
 
 - `description` (String) Free-form description. Changing it replaces the resource.
-- `field` (Block List) One field of the template. Set exactly one of value, values, seconds, duration_range, choices with its default, requester, derived and json. Changing any field replaces the resource. (see [below for nested schema](#nestedblock--field))
+- `field` (Block List) One field of the template. Set exactly one of value, values, seconds, duration_range, choices or affix with its default, requester, derived and json. The order of the field blocks does not matter. Changing any field replaces the resource. (see [below for nested schema](#nestedblock--field))
 - `folder` (List of String) Folder path from the vault root to place the connected app in, for example ["terraform", "prod"]. Missing folders are created. Unset places it at the vault root. Changing it moves the record.
 - `folder_id` (String) Node id of an existing folder to place the connected app in, such as the id of a splitsecure_vault_folder. Set at most one of folder and folder_id. Changing it moves the record.
 - `justification` (String, [Write-only](https://developer.hashicorp.com/terraform/language/resources/ephemeral#write-only-arguments)) Justification shown to approvers when the create needs approval. Write-only and never stored in state.
 - `name_id` (Block List) NameID of a SAML2 app, built from parts. Replaces the template's name_id field wherever the layout places it. Changing it replaces the resource. (see [below for nested schema](#nestedblock--name_id))
 - `notification_policy` (String) Who is notified about requests against the connected app. One of: notify_everyone, allow_selective_notifications. Changing it replaces the resource.
 - `oidc` (Block List) Signing key of an OIDC template. Set this block or saml2, not both. Changing it replaces the resource. (see [below for nested schema](#nestedblock--oidc))
-- `saml2` (Block List) Service provider of a SAML2 template. Set this block or oidc, not both. Changing it replaces the resource. (see [below for nested schema](#nestedblock--saml2))
+- `saml2` (Block List) Service provider of a SAML2 template: entity_id and acs_url, or its metadata_xml. Set this block or oidc, not both. Changing it replaces the resource. (see [below for nested schema](#nestedblock--saml2))
 - `sensitivity` (String) Sensitivity level of the connected app. One of: low, medium, high, critical. Changing it replaces the resource.
 - `wait` (String, [Write-only](https://developer.hashicorp.com/terraform/language/resources/ephemeral#write-only-arguments)) How long the server holds the create open for approval before Terraform starts polling, as a Go duration such as "30s". Defaults to 0. Write-only and never stored in state.
 
@@ -879,8 +879,9 @@ Required:
 
 Optional:
 
+- `affix` (Block List) Text each sign-in sets within a prefix, a suffix and a length, for a text field. Set it in place of choices. (see [below for nested schema](#nestedblock--field--affix))
 - `choices` (List of String) Values each sign-in chooses from: one for a text field, any of them for a list field. Defaults to the template's choices for the field.
-- `default_value` (String) Choice a sign-in gets when it chooses none, for a text field.
+- `default_value` (String) Value a sign-in gets when it sets none, for a text field with choices or affix.
 - `default_values` (List of String) Choices a sign-in gets when it chooses none, for a list field.
 - `derived` (String) Text the enclave derives: at_creation or per_sign_in.
 - `duration_range` (Block List) Duration each sign-in chooses within bounds, in seconds. (see [below for nested schema](#nestedblock--field--duration_range))
@@ -891,6 +892,16 @@ Optional:
 - `suffix` (String) Ending a requester value must have, such as @corp.example.
 - `value` (String) Fixed text.
 - `values` (List of String) Fixed list of text.
+
+<a id="nestedblock--field--affix"></a>
+### Nested Schema for `field.affix`
+
+Optional:
+
+- `max_length` (Number) Most bytes the value may have. Unset or 0 sets no limit.
+- `prefix` (String) Beginning the value must have.
+- `suffix` (String) Ending the value must have.
+
 
 <a id="nestedblock--field--duration_range"></a>
 ### Nested Schema for `field.duration_range`
@@ -925,7 +936,8 @@ Required:
 <a id="nestedblock--saml2"></a>
 ### Nested Schema for `saml2`
 
-Required:
+Optional:
 
-- `acs_url` (String) Assertion consumer service URL, posted to with HTTP-POST.
-- `entity_id` (String) Entity id of the service provider, the assertion audience.
+- `acs_url` (String) Assertion consumer service URL, posted to with HTTP-POST. Set it with entity_id.
+- `entity_id` (String) Entity id of the service provider, the assertion audience. Set it with acs_url.
+- `metadata_xml` (String) SAML 2.0 metadata of the service provider: one EntityDescriptor. Set it in place of entity_id and acs_url. Formatting changes that keep the same metadata are not a change.

@@ -271,6 +271,15 @@ func (t *Template) implicitFields(given []*pb.Field, placed *placedInstances) ([
 	return out, nil
 }
 
+// ImplicitField returns the field a create adds for s when the admin leaves it out, or nil when the admin must set it.
+func ImplicitField(s *FieldSpec) *pb.Field {
+	if s.Repeatable {
+		return nil
+	}
+
+	return s.implicitField()
+}
+
 // implicitField returns the required field a create leaves to the template:
 // one derived by the enclave or filled from the requester.
 func (s *FieldSpec) implicitField() *pb.Field {

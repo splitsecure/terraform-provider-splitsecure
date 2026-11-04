@@ -249,7 +249,7 @@ func typeName(t catalog.FieldType) string {
 
 func required(s *catalog.FieldSpec) string {
 	switch {
-	case filledByTemplate(s):
+	case catalog.ImplicitField(s) != nil:
 		return "filled by the template"
 	case s.Required && s.Repeatable:
 		return "at least once"
@@ -258,15 +258,6 @@ func required(s *catalog.FieldSpec) string {
 	default:
 		return "no"
 	}
-}
-
-// filledByTemplate reports whether a create leaves the field to the template: required, with one source that needs nothing from the admin.
-func filledByTemplate(s *catalog.FieldSpec) bool {
-	if !s.Required || s.Repeatable || len(s.Sources) != 1 {
-		return false
-	}
-
-	return slices.Contains([]catalog.Source{catalog.SourceDerivedAtCreation, catalog.SourceDerivedPerSignIn, catalog.SourceRequester}, s.Sources[0])
 }
 
 func sources(s *catalog.FieldSpec) string {

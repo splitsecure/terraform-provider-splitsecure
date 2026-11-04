@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"strings"
 
 	"github.com/hashicorp/terraform-plugin-framework/diag"
@@ -35,6 +36,10 @@ var (
 	errJSONObject    = errors.New("json must hold one JSON object")
 	errUnknownSource = errors.New("unknown source value")
 	errListElement   = errors.New("list holds a null value")
+
+	errListAffix       = errors.New("an affix applies only to a text field chosen at sign-in")
+	errChoicesAndAffix = errors.New("set choices or affix, not both")
+	errMaxLength       = errors.New("max_length must be from 0 to 4294967295")
 )
 
 // params builds the create params from a fully known model, reporting each problem at its attribute.
@@ -90,7 +95,7 @@ func bindingFromModel(ctx context.Context, m *appModel, diags *diag.Diagnostics)
 	}
 
 	if len(saml2) == 1 {
-		return catalog.Binding{SAML2: catalog.MinimalSPMetadata(saml2[0].EntityID.ValueString(), saml2[0].ACSURL.ValueString())}
+		return samlBinding(&saml2[0], diags)
 	}
 
 	keyID, err := base64.StdEncoding.DecodeString(oidc[0].KeyID.ValueString())
@@ -101,6 +106,47 @@ func bindingFromModel(ctx context.Context, m *appModel, diags *diag.Diagnostics)
 	}
 
 	return catalog.Binding{OIDCKeyID: keyID}
+}
+
+// samlBinding returns the SP metadata of a saml2 block: from entity_id and acs_url, or parsed from metadata_xml.
+func samlBinding(m *saml2Model, diags *diag.Diagnostics) catalog.Binding {
+	at := path.Root("saml2").AtListIndex(0)
+
+	simple, problem := samlForm(m)
+	if problem != "" {
+		diags.AddAttributeError(at, "Invalid saml2 block", problem)
+
+		return catalog.Binding{}
+	}
+
+	if simple {
+		return catalog.Binding{SAML2: catalog.MinimalSPMetadata(m.EntityID.ValueString(), m.ACSURL.ValueString())}
+	}
+
+	md, err := parseMetadata(m.MetadataXML.ValueString())
+	if err != nil {
+		diags.AddAttributeError(at.AtName("metadata_xml"), "Invalid metadata_xml", err.Error())
+
+		return catalog.Binding{}
+	}
+
+	return catalog.Binding{SAML2: md}
+}
+
+// samlForm reports whether the block uses entity_id and acs_url rather than metadata_xml, or what is wrong with it.
+func samlForm(m *saml2Model) (bool, string) {
+	simple := !m.EntityID.IsNull() || !m.ACSURL.IsNull()
+
+	switch {
+	case simple && !m.MetadataXML.IsNull():
+		return false, "Set entity_id and acs_url, or metadata_xml, not both."
+	case simple && (m.EntityID.IsNull() || m.ACSURL.IsNull()):
+		return false, "Set both entity_id and acs_url."
+	case !simple && m.MetadataXML.IsNull():
+		return false, "Set entity_id and acs_url, or metadata_xml."
+	}
+
+	return simple, ""
 }
 
 func fieldsFromModel(ctx context.Context, list types.List, tmpl *catalog.Template, diags *diag.Diagnostics) ([]*pb.Field, []catalog.Instance) {
@@ -174,7 +220,7 @@ func (fm *fieldModel) field(ctx context.Context, spec *catalog.FieldSpec) (*pb.F
 }
 
 func (fm *fieldModel) modifiable() bool {
-	return !fm.Choices.IsNull() || !fm.DefaultValue.IsNull() || !fm.DefaultValues.IsNull()
+	return !fm.Choices.IsNull() || !fm.DefaultValue.IsNull() || !fm.DefaultValues.IsNull() || len(fm.Affix.Elements()) > 0
 }
 
 // checkShape refuses a field with no source, with several, or with a suffix that has no requester to hold.
@@ -205,11 +251,13 @@ func (fm *fieldModel) checkShape() error {
 func (fm *fieldModel) chosenAtSignIn(ctx context.Context, spec *catalog.FieldSpec) (*pb.Field, error) {
 	isList := spec != nil && spec.Type == catalog.TypeStringList
 
-	switch {
-	case isList && !fm.DefaultValue.IsNull():
-		return nil, errListDefault
-	case !isList && !fm.DefaultValues.IsNull():
-		return nil, errTextDefaults
+	err := fm.checkChosen(isList)
+	if err != nil {
+		return nil, err
+	}
+
+	if len(fm.Affix.Elements()) > 0 {
+		return fm.affixString(ctx)
 	}
 
 	choices, err := fm.choices(ctx, spec)
@@ -222,6 +270,50 @@ func (fm *fieldModel) chosenAtSignIn(ctx context.Context, spec *catalog.FieldSpe
 	}
 
 	opts := catalog.ModifiableStringOptions{Choices: choices}
+	if !fm.DefaultValue.IsNull() {
+		opts.Default = new(fm.DefaultValue.ValueString())
+	}
+
+	return catalog.ModifiableString(fm.Name.ValueString(), opts), nil
+}
+
+// checkChosen refuses a default or an affix of the other field type, and choices set beside an affix.
+func (fm *fieldModel) checkChosen(isList bool) error {
+	hasAffix := len(fm.Affix.Elements()) > 0
+
+	switch {
+	case isList && !fm.DefaultValue.IsNull():
+		return errListDefault
+	case !isList && !fm.DefaultValues.IsNull():
+		return errTextDefaults
+	case hasAffix && isList:
+		return errListAffix
+	case hasAffix && !fm.Choices.IsNull():
+		return errChoicesAndAffix
+	}
+
+	return nil
+}
+
+// affixString returns a text field each sign-in sets within the affix, else to default_value.
+func (fm *fieldModel) affixString(ctx context.Context) (*pb.Field, error) {
+	var affixes []affixModel
+
+	diags := fm.Affix.ElementsAs(ctx, &affixes, false)
+	if diags.HasError() || len(affixes) != 1 {
+		return nil, errFieldShape
+	}
+
+	a := affixes[0]
+	if a.MaxLength.ValueInt64() < 0 || a.MaxLength.ValueInt64() > math.MaxUint32 {
+		return nil, errMaxLength
+	}
+
+	opts := catalog.ModifiableStringOptions{Affix: &catalog.Affix{
+		Prefix:    a.Prefix.ValueString(),
+		Suffix:    a.Suffix.ValueString(),
+		MaxLength: uint32(a.MaxLength.ValueInt64()), //nolint:gosec // bounded to uint32 above.
+	}}
 	if !fm.DefaultValue.IsNull() {
 		opts.Default = new(fm.DefaultValue.ValueString())
 	}
@@ -306,21 +398,19 @@ func (fm *fieldModel) durationRange(ctx context.Context) (*pb.Field, error) {
 	return catalog.DurationRange(fm.Name.ValueString(), r.MinSeconds.ValueInt64(), r.MaxSeconds.ValueInt64(), def), nil
 }
 
-// jsonField decodes raw as one JSON object, keeping numbers exact.
+// jsonField decodes raw as one JSON object, keeping member order and exact numbers.
 func jsonField(name, raw string) (*pb.Field, error) {
 	dec := json.NewDecoder(strings.NewReader(raw))
 	dec.UseNumber()
 
-	var v any
-
-	err := dec.Decode(&v)
-	if err != nil {
-		return nil, fmt.Errorf("%w: %w", errJSONObject, err)
+	tok, err := dec.Token()
+	if err != nil || tok != json.Delim('{') {
+		return nil, errJSONObject
 	}
 
-	obj, ok := v.(map[string]any)
-	if !ok {
-		return nil, errJSONObject
+	members, err := jsonMembers(dec)
+	if err != nil {
+		return nil, fmt.Errorf("%w: %w", errJSONObject, err)
 	}
 
 	_, err = dec.Token()
@@ -328,12 +418,76 @@ func jsonField(name, raw string) (*pb.Field, error) {
 		return nil, fmt.Errorf("%w: trailing data after the object", errJSONObject)
 	}
 
-	f, err := catalog.FixedJSONObjectFromMap(name, obj)
+	f, err := catalog.FixedJSONObject(name, members)
 	if err != nil {
 		return nil, fmt.Errorf("decoding json: %w", err)
 	}
 
 	return f, nil
+}
+
+// jsonMembers reads an object's members up to its closing brace, the opening one already read.
+func jsonMembers(dec *json.Decoder) ([]catalog.Member, error) {
+	var out []catalog.Member
+
+	for dec.More() {
+		tok, err := dec.Token()
+		if err != nil {
+			return nil, fmt.Errorf("reading a member name: %w", err)
+		}
+
+		name, ok := tok.(string)
+		if !ok {
+			return nil, errJSONObject
+		}
+
+		v, err := jsonValue(dec)
+		if err != nil {
+			return nil, err
+		}
+
+		out = append(out, catalog.Member{Name: name, Value: v})
+	}
+
+	_, err := dec.Token()
+	if err != nil {
+		return nil, fmt.Errorf("reading the end of an object: %w", err)
+	}
+
+	return out, nil
+}
+
+// jsonValue reads one value: an object as members in order, an array as a list, a number as json.Number.
+func jsonValue(dec *json.Decoder) (any, error) {
+	tok, err := dec.Token()
+	if err != nil {
+		return nil, fmt.Errorf("reading a value: %w", err)
+	}
+
+	switch tok {
+	case json.Delim('{'):
+		return jsonMembers(dec)
+	case json.Delim('['):
+		var items []any
+
+		for dec.More() {
+			v, err := jsonValue(dec)
+			if err != nil {
+				return nil, err
+			}
+
+			items = append(items, v)
+		}
+
+		_, err := dec.Token()
+		if err != nil {
+			return nil, fmt.Errorf("reading the end of a list: %w", err)
+		}
+
+		return items, nil
+	}
+
+	return tok, nil
 }
 
 func nameIDOptions(ctx context.Context, list types.List, diags *diag.Diagnostics) []catalog.Option {

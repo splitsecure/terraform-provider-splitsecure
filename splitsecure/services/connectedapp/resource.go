@@ -3,7 +3,6 @@ package connectedapp
 
 import (
 	"context"
-	"encoding/base64"
 	"errors"
 	"fmt"
 
@@ -11,11 +10,9 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework-validators/listvalidator"
 	"github.com/hashicorp/terraform-plugin-framework-validators/stringvalidator"
 	"github.com/hashicorp/terraform-plugin-framework/attr"
-	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
-	"github.com/hashicorp/terraform-plugin-framework/resource/schema/listplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/mapplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/schema/validator"
@@ -35,6 +32,7 @@ var (
 	_ resource.Resource                   = (*appResource)(nil)
 	_ resource.ResourceWithImportState    = (*appResource)(nil)
 	_ resource.ResourceWithValidateConfig = (*appResource)(nil)
+	_ resource.ResourceWithModifyPlan     = (*appResource)(nil)
 )
 
 // kindConnectedApp is the record kind of a connected app.
@@ -69,8 +67,15 @@ type appModel struct {
 }
 
 type saml2Model struct {
-	EntityID types.String `tfsdk:"entity_id"`
-	ACSURL   types.String `tfsdk:"acs_url"`
+	EntityID    types.String `tfsdk:"entity_id"`
+	ACSURL      types.String `tfsdk:"acs_url"`
+	MetadataXML types.String `tfsdk:"metadata_xml"`
+}
+
+type affixModel struct {
+	Prefix    types.String `tfsdk:"prefix"`
+	Suffix    types.String `tfsdk:"suffix"`
+	MaxLength types.Int64  `tfsdk:"max_length"`
 }
 
 type oidcModel struct {
@@ -91,6 +96,7 @@ type fieldModel struct {
 	Choices       types.List   `tfsdk:"choices"`
 	DefaultValue  types.String `tfsdk:"default_value"`
 	DefaultValues types.List   `tfsdk:"default_values"`
+	Affix         types.List   `tfsdk:"affix"`
 	Requester     types.String `tfsdk:"requester"`
 	Suffix        types.String `tfsdk:"suffix"`
 	Derived       types.String `tfsdk:"derived"`
@@ -104,7 +110,11 @@ type durationRangeModel struct {
 }
 
 func saml2Type() types.ObjectType {
-	return types.ObjectType{AttrTypes: map[string]attr.Type{"entity_id": types.StringType, "acs_url": types.StringType}}
+	return types.ObjectType{AttrTypes: map[string]attr.Type{"entity_id": types.StringType, "acs_url": types.StringType, "metadata_xml": types.StringType}}
+}
+
+func affixType() types.ObjectType {
+	return types.ObjectType{AttrTypes: map[string]attr.Type{"prefix": types.StringType, "suffix": types.StringType, "max_length": types.Int64Type}}
 }
 
 func oidcType() types.ObjectType {
@@ -127,7 +137,8 @@ func fieldType() types.ObjectType {
 	return types.ObjectType{AttrTypes: map[string]attr.Type{
 		"name": types.StringType, "key": types.StringType, "value": types.StringType, "values": stringList,
 		"seconds": types.Int64Type, "duration_range": types.ListType{ElemType: durationRangeType()},
-		"choices": stringList, "default_value": types.StringType, "default_values": stringList, "requester": types.StringType, "suffix": types.StringType,
+		"choices": stringList, "default_value": types.StringType, "default_values": stringList,
+		"affix": types.ListType{ElemType: affixType()}, "requester": types.StringType, "suffix": types.StringType,
 		"derived": types.StringType, "json": types.StringType,
 	}}
 }
@@ -198,31 +209,31 @@ func (r *appResource) Schema(_ context.Context, _ resource.SchemaRequest, resp *
 	}
 }
 
-func replaceList() []planmodifier.List {
-	return []planmodifier.List{listplanmodifier.RequiresReplace()}
-}
-
 func atMostOne() []validator.List {
 	return []validator.List{listvalidator.SizeAtMost(1)}
 }
 
+// The input blocks carry no plan modifiers: ModifyPlan compares them by meaning and replaces the resource when it changes.
 func saml2Block() schema.ListNestedBlock {
 	return schema.ListNestedBlock{
-		Description:   "Service provider of a SAML2 template. Set this block or oidc, not both. Changing it replaces the resource.",
-		PlanModifiers: replaceList(),
-		Validators:    atMostOne(),
+		Description: "Service provider of a SAML2 template: entity_id and acs_url, or its metadata_xml. Set this block or oidc, not both. Changing it replaces the resource.",
+		Validators:  atMostOne(),
 		NestedObject: schema.NestedBlockObject{Attributes: map[string]schema.Attribute{
-			"entity_id": schema.StringAttribute{Required: true, Description: "Entity id of the service provider, the assertion audience."},
-			"acs_url":   schema.StringAttribute{Required: true, Description: "Assertion consumer service URL, posted to with HTTP-POST."},
+			"entity_id": schema.StringAttribute{Optional: true, Description: "Entity id of the service provider, the assertion audience. Set it with acs_url."},
+			"acs_url":   schema.StringAttribute{Optional: true, Description: "Assertion consumer service URL, posted to with HTTP-POST. Set it with entity_id."},
+			"metadata_xml": schema.StringAttribute{
+				Optional: true,
+				Description: "SAML 2.0 metadata of the service provider: one EntityDescriptor. Set it in place of entity_id and acs_url. " +
+					"Formatting changes that keep the same metadata are not a change.",
+			},
 		}},
 	}
 }
 
 func oidcBlock() schema.ListNestedBlock {
 	return schema.ListNestedBlock{
-		Description:   "Signing key of an OIDC template. Set this block or saml2, not both. Changing it replaces the resource.",
-		PlanModifiers: replaceList(),
-		Validators:    atMostOne(),
+		Description: "Signing key of an OIDC template. Set this block or saml2, not both. Changing it replaces the resource.",
+		Validators:  atMostOne(),
 		NestedObject: schema.NestedBlockObject{Attributes: map[string]schema.Attribute{
 			"key_id": schema.StringAttribute{Required: true, Description: "Base64 vault key id of the issuer key that signs tokens, as the issuer's keys export it."},
 		}},
@@ -231,9 +242,8 @@ func oidcBlock() schema.ListNestedBlock {
 
 func nameIDBlock() schema.ListNestedBlock {
 	return schema.ListNestedBlock{
-		Description:   "NameID of a SAML2 app, built from parts. Replaces the template's name_id field wherever the layout places it. Changing it replaces the resource.",
-		PlanModifiers: replaceList(),
-		Validators:    atMostOne(),
+		Description: "NameID of a SAML2 app, built from parts. Replaces the template's name_id field wherever the layout places it. Changing it replaces the resource.",
+		Validators:  atMostOne(),
 		NestedObject: schema.NestedBlockObject{Attributes: map[string]schema.Attribute{
 			"parts": schema.ListAttribute{
 				ElementType: types.StringType,
@@ -245,11 +255,10 @@ func nameIDBlock() schema.ListNestedBlock {
 }
 
 func fieldBlock() schema.ListNestedBlock {
-	sourced := "Set exactly one of value, values, seconds, duration_range, choices with its default, requester, derived and json."
+	sourced := "Set exactly one of value, values, seconds, duration_range, choices or affix with its default, requester, derived and json."
 
 	return schema.ListNestedBlock{
-		Description:   "One field of the template. " + sourced + " Changing any field replaces the resource.",
-		PlanModifiers: replaceList(),
+		Description: "One field of the template. " + sourced + " The order of the field blocks does not matter. Changing any field replaces the resource.",
 		NestedObject: schema.NestedBlockObject{
 			Attributes: map[string]schema.Attribute{
 				"name": schema.StringAttribute{Required: true, Description: "Field name as the template declares it, such as role_arn."},
@@ -265,7 +274,7 @@ func fieldBlock() schema.ListNestedBlock {
 					Optional:    true,
 					Description: "Values each sign-in chooses from: one for a text field, any of them for a list field. Defaults to the template's choices for the field.",
 				},
-				"default_value": schema.StringAttribute{Optional: true, Description: "Choice a sign-in gets when it chooses none, for a text field."},
+				"default_value": schema.StringAttribute{Optional: true, Description: "Value a sign-in gets when it sets none, for a text field with choices or affix."},
 				"default_values": schema.ListAttribute{
 					ElementType: types.StringType,
 					Optional:    true,
@@ -285,6 +294,15 @@ func fieldBlock() schema.ListNestedBlock {
 				"json": schema.StringAttribute{Optional: true, Description: "Fixed JSON object, such as jsonencode({team = \"platform\"}). Numbers must be integers."},
 			},
 			Blocks: map[string]schema.Block{
+				"affix": schema.ListNestedBlock{
+					Description: "Text each sign-in sets within a prefix, a suffix and a length, for a text field. Set it in place of choices.",
+					Validators:  atMostOne(),
+					NestedObject: schema.NestedBlockObject{Attributes: map[string]schema.Attribute{
+						"prefix":     schema.StringAttribute{Optional: true, Description: "Beginning the value must have."},
+						"suffix":     schema.StringAttribute{Optional: true, Description: "Ending the value must have."},
+						"max_length": schema.Int64Attribute{Optional: true, Description: "Most bytes the value may have. Unset or 0 sets no limit."},
+					}},
+				},
 				"duration_range": schema.ListNestedBlock{
 					Description: "Duration each sign-in chooses within bounds, in seconds.",
 					Validators:  atMostOne(),
@@ -396,7 +414,7 @@ func (r *appResource) Create(ctx context.Context, req resource.CreateRequest, re
 
 	rec, err := vaultapi.FetchRecord(ctx, r.client.VaultBrowse, vaultID, plan.ID.ValueString())
 	if err == nil {
-		err = populate(ctx, &plan, rec)
+		_, err = populate(&plan, rec)
 	}
 
 	if err != nil {
@@ -433,11 +451,26 @@ func (r *appResource) Read(ctx context.Context, req resource.ReadRequest, resp *
 		return
 	}
 
-	err = populate(ctx, &state, rec)
+	app, err := populate(&state, rec)
+	if err == nil {
+		err = reconcileInputs(ctx, &state, app)
+	}
+
 	if err != nil {
 		resp.Diagnostics.AddError("Reading connected app", err.Error())
 
 		return
+	}
+
+	if state.IssuerID.IsNull() {
+		issuerID, err := findIssuer(ctx, r.client.VaultBrowse, state.VaultID.ValueString(), app)
+		if err != nil {
+			resp.Diagnostics.AddError("Finding the issuer of the connected app", err.Error())
+
+			return
+		}
+
+		state.IssuerID = types.StringValue(issuerID)
 	}
 
 	state.Folder, state.FolderID, err = vaultres.ObservePlacement(ctx, r.client.VaultBrowse, state.VaultID.ValueString(), state.ID.ValueString(), state.Folder, state.FolderID)
@@ -518,18 +551,17 @@ func (r *appResource) ImportState(ctx context.Context, req resource.ImportStateR
 	resp.Diagnostics.Append(resp.State.SetAttribute(ctx, path.Root("id"), id)...)
 }
 
-// populate fills the model from a fetched record. The record does not hold the issuer id or the fields as configured, so
-// those keep their state value; the binding block and issuer vault are read back only when state lacks them, as after import.
-func populate(ctx context.Context, m *appModel, rec *vaultapi.Record) error {
+// populate fills the computed and common attributes from a fetched record and returns the app it holds.
+func populate(m *appModel, rec *vaultapi.Record) (*pb.ConnectedAppParams, error) {
 	if rec.Kind != kindConnectedApp {
-		return fmt.Errorf("%w: kind %q", errUnexpectedKind, rec.Kind)
+		return nil, fmt.Errorf("%w: kind %q", errUnexpectedKind, rec.Kind)
 	}
 
 	var app pb.ConnectedAppParams
 
 	err := proto.Unmarshal(rec.Params, &app)
 	if err != nil {
-		return fmt.Errorf("decoding connected app params: %w", err)
+		return nil, fmt.Errorf("decoding connected app params: %w", err)
 	}
 
 	attrs := rec.Attributes
@@ -547,63 +579,7 @@ func populate(ctx context.Context, m *appModel, rec *vaultapi.Record) error {
 		m.IssuerVaultID = m.VaultID
 	}
 
-	var diags diag.Diagnostics
-
-	if m.SAML2.IsNull() && m.OIDC.IsNull() {
-		m.SAML2, m.OIDC = bindingBlocks(ctx, &app, &diags)
-	}
-
-	m.Fields = emptyIfNull(m.Fields, fieldType())
-	m.NameID = emptyIfNull(m.NameID, nameIDType())
-
-	if diags.HasError() {
-		return fmt.Errorf("building binding blocks: %s", diags.Errors()[0].Detail()) //nolint:err113 // diagnostics carry no wrappable error.
-	}
-
-	return nil
-}
-
-// bindingBlocks returns the saml2 and oidc blocks the record's binding holds.
-func bindingBlocks(ctx context.Context, app *pb.ConnectedAppParams, diags *diag.Diagnostics) (types.List, types.List) {
-	var (
-		saml2 = []saml2Model{}
-		oidc  = []oidcModel{}
-	)
-
-	if b := app.GetSaml2().GetBinding(); b != nil {
-		desc := b.GetSpMetadata().GetEntityDescriptor()
-		acs := ""
-
-		for _, sp := range desc.GetSpSsoDescriptor() {
-			for _, ep := range sp.GetAssertionConsumerService() {
-				if acs == "" || ep.GetIsDefault() {
-					acs = ep.GetBase().GetLocation()
-				}
-			}
-		}
-
-		saml2 = append(saml2, saml2Model{EntityID: types.StringValue(desc.GetEntityId()), ACSURL: types.StringValue(acs)})
-	}
-
-	if b := app.GetOidc().GetBinding(); b != nil {
-		oidc = append(oidc, oidcModel{KeyID: types.StringValue(base64.StdEncoding.EncodeToString(b.GetKeyId()))})
-	}
-
-	saml2List, d := types.ListValueFrom(ctx, saml2Type(), saml2)
-	diags.Append(d...)
-
-	oidcList, d := types.ListValueFrom(ctx, oidcType(), oidc)
-	diags.Append(d...)
-
-	return saml2List, oidcList
-}
-
-func emptyIfNull(l types.List, elem attr.Type) types.List {
-	if !l.IsNull() {
-		return l
-	}
-
-	return types.ListValueMust(elem, []attr.Value{})
+	return &app, nil
 }
 
 // derivedValues maps each text field the enclave derived at creation to its value.

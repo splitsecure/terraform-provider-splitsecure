@@ -82,13 +82,7 @@ func list[T any](t *testing.T, elem attr.Type, items []T) types.List {
 func newField(t *testing.T, name string, set func(*fieldModel)) fieldModel {
 	t.Helper()
 
-	null := types.StringNull()
-	f := fieldModel{
-		Name: types.StringValue(name), Key: null, Value: null, Values: types.ListNull(types.StringType),
-		Seconds: types.Int64Null(), DurationRange: list[durationRangeModel](t, durationRangeType(), nil),
-		Choices: types.ListNull(types.StringType), DefaultValue: null, DefaultValues: types.ListNull(types.StringType),
-		Requester: null, Suffix: null, Derived: null, JSON: null,
-	}
+	f := emptyFieldModel(name)
 	set(&f)
 
 	return f
@@ -125,7 +119,7 @@ func model(t *testing.T, template string, fields ...fieldModel) appModel {
 func withSAML2(t *testing.T, m appModel) appModel {
 	t.Helper()
 
-	m.SAML2 = list(t, saml2Type(), []saml2Model{{EntityID: types.StringValue(entityID), ACSURL: types.StringValue(acsURL)}})
+	m.SAML2 = list(t, saml2Type(), []saml2Model{{EntityID: types.StringValue(entityID), ACSURL: types.StringValue(acsURL), MetadataXML: types.StringNull()}})
 
 	return m
 }
@@ -251,14 +245,10 @@ func recordHandler(t *testing.T, app *pb.ConnectedAppParams) func(*vaultbrowsev1
 	}
 }
 
-func samlRecord() *pb.ConnectedAppParams {
-	return &pb.ConnectedAppParams{
-		Template: "saml2/aws",
-		Title:    "AWS (SAML)",
-		App: &pb.ConnectedAppParams_Saml2{Saml2: &pb.SAML2App{
-			Binding: &pb.SAML2Binding{IdpSerial: 7, SpMetadata: catalog.MinimalSPMetadata(entityID, acsURL)},
-		}},
-	}
+func samlRecord(t *testing.T) *pb.ConnectedAppParams {
+	t.Helper()
+
+	return recordFromCreate(samlAWSParams(t))
 }
 
 func assertProtoEqual(t *testing.T, got, want proto.Message) {
@@ -326,7 +316,7 @@ func TestConnectedAppCreatesSAML2AWS(t *testing.T) {
 					return vaultfake.ResolvedTicket(deleted != nil, "node-1"), nil
 				},
 			}
-			r := &appResource{client: newClient(t, use, &vaultfake.Browse{OnGetRecord: recordHandler(t, samlRecord())})}
+			r := &appResource{client: newClient(t, use, &vaultfake.Browse{OnGetRecord: recordHandler(t, samlRecord(t))})}
 
 			state, err := create(t, r, samlAWSModel(t))
 			if err != nil {
@@ -420,30 +410,19 @@ func TestConnectedAppCreatesOIDCAWS(t *testing.T) {
 		},
 	}
 
-	// As the stored record: the subject derived at creation, held as text.
-	record := &pb.ConnectedAppParams{
-		Template: "oidc/aws",
-		Title:    "AWS (OIDC)",
-		App:      &pb.ConnectedAppParams_Oidc{Oidc: &pb.OIDCApp{Binding: &pb.OIDCBinding{KeyId: keyID}}},
-		Fields: []*pb.Field{
-			{Name: "subject", Label: "Subject", Type: &pb.Field_StringField{StringField: &pb.StringField{
-				Source: &pb.StringField_DerivedText{DerivedText: &pb.DerivedText{Value: derivedSubject}},
-			}}},
-			catalog.DerivedString("token_id", pb.Derived_DERIVED_PER_SIGN_IN_ID),
-		},
-	}
-	r := &appResource{client: newClient(t, use, &vaultfake.Browse{OnGetRecord: recordHandler(t, record)})}
-
-	state, err := create(t, r, m)
-	if err != nil {
-		t.Fatalf("Create: %v", err)
-	}
-
 	want, err := catalog.Build("oidc/aws", catalog.Binding{OIDCKeyID: keyID},
 		[]*pb.Field{catalog.FixedString("role_arn", roleARN), catalog.FixedDuration("session_duration", 3600)},
 		[]catalog.Instance{{Key: "Email", Field: catalog.RequesterString("session_tag", pb.Requester_REQUESTER_EMAIL, "@corp.example")}})
 	if err != nil {
 		t.Fatal(err)
+	}
+
+	// As the stored record: the subject derived at creation, held as text.
+	r := &appResource{client: newClient(t, use, &vaultfake.Browse{OnGetRecord: recordHandler(t, recordFromCreate(want))})}
+
+	state, err := create(t, r, m)
+	if err != nil {
+		t.Fatalf("Create: %v", err)
 	}
 
 	assertProtoEqual(t, created.GetBase().GetApp(), want)
@@ -724,7 +703,7 @@ func TestConnectedAppImportRoundTrip(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
-	r := &appResource{client: newClient(t, nil, &vaultfake.Browse{OnGetRecord: recordHandler(t, samlRecord())})}
+	r := &appResource{client: newClient(t, nil, vaultBrowse(t, samlRecord(t), []fakeNode{idpNode("idp-1", idpSerial)}))}
 
 	importResp := &resource.ImportStateResponse{State: emptyState(t)}
 	r.ImportState(ctx, resource.ImportStateRequest{ID: "vault-1/node-1"}, importResp)
@@ -798,7 +777,7 @@ func TestConnectedAppPlacesRecordInCreatedFolder(t *testing.T) {
 		},
 	}
 
-	browse := &vaultfake.Browse{OnGetRecord: recordHandler(t, samlRecord())}
+	browse := &vaultfake.Browse{OnGetRecord: recordHandler(t, samlRecord(t))}
 	tree := &vaultfake.FolderTree{Existing: map[string]string{"terraform": "id-terraform"}}
 	tree.Attach(browse)
 
@@ -846,7 +825,7 @@ func newPlacementHarness(t *testing.T) *placementHarness {
 		},
 	}
 
-	browse := &vaultfake.Browse{OnGetRecord: recordHandler(t, samlRecord())}
+	browse := &vaultfake.Browse{OnGetRecord: recordHandler(t, samlRecord(t))}
 	h.tree.Attach(browse)
 	browse.OnMoveNode = func(req *vaultbrowsev1.MoveNodeRequest) (*vaultbrowsev1.MoveNodeResponse, error) {
 		h.moves = append(h.moves, req)
