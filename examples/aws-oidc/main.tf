@@ -87,12 +87,12 @@ resource "splitsecure_connected_app" "aws_session" {
     value = local.role_arn
   }
 
-  # Each sign-in chooses a session length up to the role's maximum.
+  # Each sign-in chooses a session of up to 30 minutes, below the role's 1 hour maximum.
   field {
     name = "session_duration"
     duration_range {
       min_seconds     = 900
-      max_seconds     = var.max_session_seconds
+      max_seconds     = 1800
       default_seconds = 1800
     }
   }
@@ -135,7 +135,7 @@ data "aws_iam_policy_document" "assume_with_token" {
 resource "aws_iam_role" "session_read_only" {
   name                 = var.role_name
   assume_role_policy   = data.aws_iam_policy_document.assume_with_token.json
-  max_session_duration = var.max_session_seconds
+  max_session_duration = 3600
 }
 
 resource "aws_iam_role_policy_attachment" "session_read_only" {

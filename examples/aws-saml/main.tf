@@ -116,12 +116,12 @@ resource "splitsecure_connected_app" "aws_console" {
     parts = ["field:requester_email"]
   }
 
-  # Each sign-in chooses a session length up to the role's maximum.
+  # Each sign-in chooses a session of up to 30 minutes, below the role's 1 hour maximum.
   field {
     name = "session_duration"
     duration_range {
       min_seconds     = 900
-      max_seconds     = aws_iam_role.console_read_only.max_session_duration
+      max_seconds     = 1800
       default_seconds = 1800
     }
   }

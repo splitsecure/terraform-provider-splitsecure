@@ -5,7 +5,7 @@ This module lets your team sign in to the Google Cloud console through SplitSecu
 - In SplitSecure: a SAML identity provider and a connected app for the Google Cloud console, in a folder of your vault. Terraform creates the folder, named `gcp` by default. Set `folder_name` and `parent_folder_id` to change it, and `grantee` to give a principal or group use access to the app.
 - In Google Cloud: a workforce pool of your organization, a SAML pool provider that trusts the identity provider, and a project role for each user in `user_emails`.
 
-Each sign-in sends the requester's email as the NameID. The pool maps the NameID to the user, so grant roles to the SplitSecure emails of your users. A console session lasts 1 hour.
+Each sign-in sends the requester's email as the NameID. The pool maps the NameID to the user, so grant roles to the SplitSecure emails of your users. A console session lasts 30 minutes.
 
 ## Before you start
 

@@ -5,7 +5,7 @@ This module lets your team get Entra ID application tokens through SplitSecure w
 - In SplitSecure: an OIDC issuer with an RS256 key and a connected app for Entra ID, in a folder of your vault. Terraform creates the folder, named `azure` by default. Set `folder_name` and `parent_folder_id` to change it, and `grantee` to give a principal or group use access to the app.
 - In Entra ID: an application, its service principal, and a federated identity credential that trusts the app's tokens.
 
-Entra ID checks three values of each token against the credential: the issuer URL of the issuer, the subject SplitSecure derived for the app, and the audience `api://AzureADTokenExchange`. Entra ID takes RS256 tokens only, so the app uses the RS256 key of the issuer. The requester chooses a token lifetime from 5 minutes to 1 hour.
+Entra ID checks three values of each token against the credential: the issuer URL of the issuer, the subject SplitSecure derived for the app, and the audience `api://AzureADTokenExchange`. Entra ID takes RS256 tokens only, so the app uses the RS256 key of the issuer. The requester chooses a token lifetime from 5 to 30 minutes. Entra ID sets the lifetime of the access token it returns in the exchange, 60 to 90 minutes by default.
 
 The module grants the service principal no Azure roles. Grant them with the `service_principal_object_id` output, in the Azure portal or with the `azurerm` provider.
 

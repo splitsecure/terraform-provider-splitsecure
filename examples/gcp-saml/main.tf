@@ -53,7 +53,7 @@ resource "google_iam_workforce_pool" "splitsecure" {
   location          = "global"
   workforce_pool_id = var.pool_id
   display_name      = "SplitSecure"
-  session_duration  = "3600s"
+  session_duration  = "1800s"
 }
 
 # The pool trusts the identity provider through its metadata, and takes the NameID as the user.

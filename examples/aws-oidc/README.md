@@ -5,7 +5,7 @@ This module lets your team get AWS role sessions through SplitSecure with OIDC t
 - In SplitSecure: an OIDC issuer with an ES256 key and a connected app for AWS, in a folder of your vault. Terraform creates the folder, named `aws` by default. Set `folder_name` and `parent_folder_id` to change it, and `grantee` to give a principal or group use access to the app.
 - In AWS: an OIDC provider that trusts the issuer, and a role with read-only access that the app's tokens can assume.
 
-The role trusts only this app. Its trust policy requires the audience `sts.amazonaws.com` and the subject SplitSecure derived for the app. Every token carries a `Team` session tag and the requester's session name as the source identity. The requester chooses a session from 15 minutes up to `max_session_seconds`.
+The role trusts only this app. Its trust policy requires the audience `sts.amazonaws.com` and the subject SplitSecure derived for the app. Every token carries a `Team` session tag and the requester's session name as the source identity. The requester chooses a session from 15 to 30 minutes.
 
 ## Before you start
 
@@ -32,7 +32,7 @@ The role trusts only this app. Its trust policy requires the audience `sts.amazo
    vault_name = "platform"
    ```
 
-   `role_name`, `max_session_seconds` and `team_tag` have defaults.
+   `role_name` and `team_tag` have defaults.
 
 3. Run `terraform init` and `terraform apply`. If your vault requires approval to create the issuer and the connected app, Terraform waits until they are approved. It creates the role last, because the role's trust policy needs the app's subject.
 

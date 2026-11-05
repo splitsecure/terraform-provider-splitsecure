@@ -32,17 +32,6 @@ variable "role_name" {
   default     = "SplitSecureSessionReadOnly"
 }
 
-variable "max_session_seconds" {
-  description = "Longest role session a sign-in may choose, from 3600 to 43200 seconds."
-  type        = number
-  default     = 3600
-
-  validation {
-    condition     = var.max_session_seconds >= 3600 && var.max_session_seconds <= 43200
-    error_message = "AWS allows a role session of 3600 to 43200 seconds."
-  }
-}
-
 variable "team_tag" {
   description = "Value of the Team session tag every sign-in carries."
   type        = string

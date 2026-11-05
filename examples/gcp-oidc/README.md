@@ -5,7 +5,7 @@ This module lets your team get Google Cloud service account tokens through Split
 - In SplitSecure: an OIDC issuer with an ES256 key and a connected app for Google Cloud, in a folder of your vault. Terraform creates the folder, named `gcp` by default. Set `folder_name` and `parent_folder_id` to change it, and `grantee` to give a principal or group use access to the app.
 - In Google Cloud: a workload identity pool, a pool provider that trusts the issuer, and a service account with the `roles/viewer` role on the project.
 
-Only this app can act as the service account. Its `roles/iam.workloadIdentityUser` binding names the subject SplitSecure derived for the app. The pool provider accepts one audience: its own full name, which every token of the app carries. The requester chooses a service account token lifetime from 5 minutes to 1 hour.
+Only this app can act as the service account. Its `roles/iam.workloadIdentityUser` binding names the subject SplitSecure derived for the app. The pool provider accepts one audience: its own full name, which every token of the app carries. The requester chooses a service account token lifetime from 5 to 30 minutes.
 
 ## Before you start
 

@@ -5,7 +5,7 @@ This module lets your team sign in to an AWS role through SplitSecure with SAML.
 - In SplitSecure: a SAML identity provider and a connected app for the AWS console, in a folder of your vault. Terraform creates the folder, named `aws` by default. Set `folder_name` and `parent_folder_id` to change it, and `grantee` to give a principal or group use access to the app.
 - In AWS: a SAML provider that trusts the identity provider, and a role with read-only access that the app signs in to.
 
-Each sign-in uses the requester's email as the NameID. The requester chooses a session from 15 minutes to 1 hour, and every session carries a `Team` tag.
+Each sign-in uses the requester's email as the NameID. The requester chooses a session from 15 to 30 minutes, and every session carries a `Team` tag.
 
 ## Before you start
 

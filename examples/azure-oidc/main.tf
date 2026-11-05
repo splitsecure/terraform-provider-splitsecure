@@ -77,7 +77,7 @@ resource "splitsecure_connected_app" "entra_application" {
     name = "lifetime"
     duration_range {
       min_seconds     = 300
-      max_seconds     = 3600
+      max_seconds     = 1800
       default_seconds = 600
     }
   }

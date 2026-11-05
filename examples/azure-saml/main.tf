@@ -9,6 +9,10 @@ terraform {
       source  = "hashicorp/azuread"
       version = ">= 3.0"
     }
+    msgraph = {
+      source  = "microsoft/msgraph"
+      version = ">= 0.6"
+    }
     random = {
       source  = "hashicorp/random"
       version = ">= 3.0"
@@ -20,8 +24,11 @@ terraform {
 # and SPLITSECURE_PRIVATE_KEY, and SPLITSECURE_ENDPOINT outside production.
 provider "splitsecure" {}
 
-# Reads the tenant and the credentials from the Azure CLI or the ARM_ environment variables.
+# Both read the tenant and the credentials from the Azure CLI or the ARM_ environment variables.
 provider "azuread" {}
+
+# Federates the domain. The azuread provider has no resource for it.
+provider "msgraph" {}
 
 data "splitsecure_vault" "azure_access" {
   name = var.vault_name
@@ -100,6 +107,23 @@ resource "splitsecure_connected_app" "entra_user" {
   }
 
   justification = "Let the team sign in to Entra ID as ${azuread_user.federated.user_principal_name}"
+}
+
+# Sends every sign-in of the domain to the identity provider. Destroy removes it before the identity provider.
+resource "msgraph_resource" "domain_federation" {
+  url = "domains/${var.domain}/federationConfiguration"
+  body = {
+    "@odata.type"                   = "#microsoft.graph.internalDomainFederation"
+    displayName                     = "SplitSecure"
+    issuerUri                       = splitsecure_saml2_identity_provider.entra_domain.provider_id
+    passiveSignInUri                = splitsecure_saml2_identity_provider.entra_domain.sso_url_post
+    signingCertificate              = splitsecure_saml2_identity_provider.entra_domain.signing_certificate_der
+    preferredAuthenticationProtocol = "saml"
+    federatedIdpMfaBehavior         = "acceptIfMfaDoneByFederatedIdp"
+  }
+
+  # The user's precondition refuses a domain that is not verified.
+  depends_on = [azuread_user.federated]
 }
 
 # Optional: let a principal or group use the app.
