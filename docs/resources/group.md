@@ -3,34 +3,40 @@
 page_title: "splitsecure_group Resource - SplitSecure"
 subcategory: ""
 description: |-
-  Locally-managed principal group in the provider-configured organization. Terraform is authoritative over the member set; SCIM- and system-managed groups cannot be managed by this resource.
+  Locally-managed principal group in the provider-configured organization. SCIM- and system-managed groups cannot be managed by this resource.
+  Choosing a resource: this resource owns the member set only when members is set, and then removes members not listed. Leave members unset to manage the group itself and add members one by one with splitsecure_group_member. Never set members and use splitsecure_group_member on the same group.
 ---
 
 # splitsecure_group (Resource)
 
-Locally-managed principal group in the provider-configured organization. Terraform is authoritative over the member set; SCIM- and system-managed groups cannot be managed by this resource.
+Locally-managed principal group in the provider-configured organization. SCIM- and system-managed groups cannot be managed by this resource.
+
+Choosing a resource: this resource owns the member set only when members is set, and then removes members not listed. Leave members unset to manage the group itself and add members one by one with splitsecure_group_member. Never set members and use splitsecure_group_member on the same group.
 
 ## Example Usage
 
 ```terraform
-# Groups are named sets of principals used as grant targets. Terraform
-# manages locally-sourced groups only: SCIM groups are owned by the
-# IdP and the system "Everyone" group is implicit. The members list is
-# authoritative — principals added out of band are removed on the next
-# apply.
-#
-# Group mutations require the service account behind the provider to
-# hold the org admin role.
-#
-# Members are referenced by the email shown in the console; the
-# splitsecure_principal data source resolves each to its s2r (users and
-# service accounts alike).
-resource "splitsecure_group" "sre" {
-  name = "SRE"
+data "splitsecure_principal" "alice" {
+  email = "alice@example.com"
+}
+
+# A service account, by its own address.
+data "splitsecure_principal" "deploy_bot" {
+  email = var.deploy_bot_address
+}
+
+# Terraform owns the member set: a member not listed here is removed.
+resource "splitsecure_group" "platform" {
+  name = "Platform"
   members = [
-    data.splitsecure_principal.alice.s2r,  # a user
-    data.splitsecure_principal.ci_bot.s2r, # a service account
+    data.splitsecure_principal.alice.s2r,
+    data.splitsecure_principal.deploy_bot.s2r,
   ]
+}
+
+# Members are managed elsewhere, for example in the console.
+resource "splitsecure_group" "on_call" {
+  name = "On-call"
 }
 ```
 
@@ -43,7 +49,7 @@ resource "splitsecure_group" "sre" {
 
 ### Optional
 
-- `members` (Set of String) Authoritative set of member principal s2r URIs (users or service accounts). Principals not listed here are removed on apply. Leave unset for an empty group.
+- `members` (Set of String) Authoritative set of member principal s2r URIs (users or service accounts). Principals not listed here are removed on apply, and an empty set removes everyone. Leave unset to leave membership unmanaged: Terraform then never reads or changes it. Do not combine members with splitsecure_group_member on the same group.
 
 ### Read-Only
 

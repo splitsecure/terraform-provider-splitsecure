@@ -20,7 +20,7 @@ var testAccProtoV6ProviderFactories = map[string]func() (tfprotov6.ProviderServe
 
 // TestAccProviderFactories_Smoke is a unit-mode (TF_ACC unset) smoke
 // test that the provider factory wires up cleanly. Real acceptance
-// tests are gated behind TF_ACC=1 + a staging endpoint and live
+// tests are gated behind TF_ACC=1 + a live endpoint and live
 // alongside the resources they exercise.
 func TestAccProviderFactories_Smoke(t *testing.T) {
 	t.Parallel()

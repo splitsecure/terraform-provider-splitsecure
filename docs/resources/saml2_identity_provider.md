@@ -3,25 +3,432 @@
 page_title: "splitsecure_saml2_identity_provider Resource - SplitSecure"
 subcategory: ""
 description: |-
-  SAML2 identity provider on a SplitSecure team. Create/Delete go through the standard proposal flow; update is not supported (any writable-attribute change replaces the resource).
+  SAML2 identity provider in a SplitSecure vault. Creating or deleting it may need approval, and the call waits for it. Changing the folder moves the record in place. Changing any other input replaces the resource.
 ---
 
 # splitsecure_saml2_identity_provider (Resource)
 
-SAML2 identity provider on a SplitSecure team. Create/Delete go through the standard proposal flow; update is not supported (any writable-attribute change replaces the resource).
+SAML2 identity provider in a SplitSecure vault. Creating or deleting it may need approval, and the call waits for it. Changing the folder moves the record in place. Changing any other input replaces the resource.
 
 ## Example Usage
 
-```terraform
-resource "splitsecure_saml2_identity_provider" "aws_console" {
-  team_s2r = "s2r:us:team:..."
+From the [`aws-saml`](https://github.com/splitsecure/terraform-provider-splitsecure/tree/main/examples/aws-saml) scenario:
 
-  name        = "platform-engineering/aws-123456789012"
-  description = "SAML IdP fronting AWS account 123456789012."
-  # provider_id (SAML EntityID) defaults to a six-BIP39-word URL
-  # (matches the web UI). Set explicitly for a stable URN-form
-  # EntityID. sso_url_redirect and sso_url_post are server-assigned
-  # (read-only) and anchor on the deployment's frontend host.
+```terraform
+terraform {
+  required_version = ">= 1.11"
+
+  required_providers {
+    splitsecure = {
+      source = "splitsecure/splitsecure"
+    }
+    aws = {
+      source  = "hashicorp/aws"
+      version = ">= 5.0"
+    }
+  }
+}
+
+# Reads SPLITSECURE_ORG_S2R, SPLITSECURE_SERVICE_ACCOUNT_S2R, SPLITSECURE_KEY_ID
+# and SPLITSECURE_PRIVATE_KEY.
+provider "splitsecure" {}
+
+provider "aws" {
+  region = var.aws_region
+}
+
+data "splitsecure_vault" "aws_access" {
+  name = var.vault_name
+}
+
+data "aws_iam_policy" "read_only_access" {
+  name = "ReadOnlyAccess"
+}
+
+# The folder that holds the records. Deleting it moves anything left inside to lost+found.
+resource "splitsecure_vault_folder" "aws" {
+  vault_id  = data.splitsecure_vault.aws_access.id
+  name      = var.folder_name
+  parent_id = var.parent_folder_id == "" ? null : var.parent_folder_id
+}
+
+# The identity provider that signs every SAML assertion.
+resource "splitsecure_saml2_identity_provider" "aws_federation" {
+  vault_id  = data.splitsecure_vault.aws_access.id
+  folder_id = splitsecure_vault_folder.aws.id
+  name      = "AWS console sign-in"
+
+  justification = "Sign in to the AWS console with SAML"
+}
+
+# AWS trusts the identity provider through its metadata.
+resource "aws_iam_saml_provider" "splitsecure" {
+  name                   = "SplitSecure"
+  saml_metadata_document = splitsecure_saml2_identity_provider.aws_federation.metadata_xml
+}
+
+# The app carries principal tags, so the trust policy allows sts:TagSession.
+data "aws_iam_policy_document" "assume_with_saml" {
+  statement {
+    actions = ["sts:AssumeRoleWithSAML", "sts:TagSession"]
+
+    principals {
+      type        = "Federated"
+      identifiers = [aws_iam_saml_provider.splitsecure.arn]
+    }
+
+    condition {
+      test     = "StringEquals"
+      variable = "SAML:aud"
+      values   = ["https://signin.aws.amazon.com/saml"]
+    }
+  }
+}
+
+resource "aws_iam_role" "console_read_only" {
+  name                 = var.role_name
+  assume_role_policy   = data.aws_iam_policy_document.assume_with_saml.json
+  max_session_duration = 3600
+}
+
+resource "aws_iam_role_policy_attachment" "console_read_only" {
+  role       = aws_iam_role.console_read_only.name
+  policy_arn = data.aws_iam_policy.read_only_access.arn
+}
+
+resource "splitsecure_connected_app" "aws_console" {
+  issuer_vault_id = data.splitsecure_vault.aws_access.id
+  issuer_id       = splitsecure_saml2_identity_provider.aws_federation.id
+  template        = "saml2/aws"
+  folder_id       = splitsecure_vault_folder.aws.id
+  name            = "AWS console (${var.role_name})"
+
+  saml2 {
+    entity_id = "urn:amazon:webservices"
+    acs_url   = "https://signin.aws.amazon.com/saml"
+  }
+
+  field {
+    name  = "role_arn"
+    value = aws_iam_role.console_read_only.arn
+  }
+
+  field {
+    name  = "saml_provider_arn"
+    value = aws_iam_saml_provider.splitsecure.arn
+  }
+
+  # The NameID is the requester's email.
+  field {
+    name  = "name_id_format"
+    value = "urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress"
+  }
+
+  field {
+    name      = "requester_email"
+    requester = "email"
+  }
+
+  name_id {
+    parts = ["field:requester_email"]
+  }
+
+  # Each sign-in chooses a session of up to 30 minutes, below the role's 1 hour maximum.
+  field {
+    name = "session_duration"
+    duration_range {
+      min_seconds     = 900
+      max_seconds     = 1800
+      default_seconds = 1800
+    }
+  }
+
+  field {
+    name  = "session_tag"
+    key   = "Team"
+    value = var.team_tag
+  }
+
+  justification = "Let the team sign in to the ${var.role_name} role"
+}
+
+# Optional: let a principal or group use the app.
+resource "splitsecure_vault_grant" "app_use" {
+  count = var.grantee == "" ? 0 : 1
+
+  vault_id = data.splitsecure_vault.aws_access.id
+  node_id  = splitsecure_connected_app.aws_console.id
+  grantee  = var.grantee
+  tier     = "use"
+}
+```
+
+From the [`gcp-saml`](https://github.com/splitsecure/terraform-provider-splitsecure/tree/main/examples/gcp-saml) scenario:
+
+```terraform
+terraform {
+  required_version = ">= 1.11"
+
+  required_providers {
+    splitsecure = {
+      source = "splitsecure/splitsecure"
+    }
+    google = {
+      source  = "hashicorp/google"
+      version = ">= 6.0"
+    }
+  }
+}
+
+# Reads SPLITSECURE_ORG_S2R, SPLITSECURE_SERVICE_ACCOUNT_S2R, SPLITSECURE_KEY_ID
+# and SPLITSECURE_PRIVATE_KEY.
+provider "splitsecure" {}
+
+provider "google" {
+  project = var.project_id
+}
+
+data "splitsecure_vault" "gcp_access" {
+  name = var.vault_name
+}
+
+locals {
+  pool_path = "locations/global/workforcePools/${google_iam_workforce_pool.splitsecure.workforce_pool_id}"
+
+  # Google Cloud names the service provider by the pool and the provider.
+  provider_path = "${local.pool_path}/providers/${google_iam_workforce_pool_provider.splitsecure.provider_id}"
+}
+
+# The folder that holds the records. Deleting it moves anything left inside to lost+found.
+resource "splitsecure_vault_folder" "gcp" {
+  vault_id  = data.splitsecure_vault.gcp_access.id
+  name      = var.folder_name
+  parent_id = var.parent_folder_id == "" ? null : var.parent_folder_id
+}
+
+# The identity provider that signs every SAML assertion.
+resource "splitsecure_saml2_identity_provider" "gcp_federation" {
+  vault_id  = data.splitsecure_vault.gcp_access.id
+  folder_id = splitsecure_vault_folder.gcp.id
+  name      = "Google Cloud console sign-in"
+
+  justification = "Sign in to the Google Cloud console with SAML"
+}
+
+# A workforce pool of the organization, for people outside Google's own directory.
+resource "google_iam_workforce_pool" "splitsecure" {
+  parent            = "organizations/${var.organization_id}"
+  location          = "global"
+  workforce_pool_id = var.pool_id
+  display_name      = "SplitSecure"
+  session_duration  = "1800s"
+}
+
+# The pool trusts the identity provider through its metadata, and takes the NameID as the user.
+resource "google_iam_workforce_pool_provider" "splitsecure" {
+  workforce_pool_id = google_iam_workforce_pool.splitsecure.workforce_pool_id
+  location          = google_iam_workforce_pool.splitsecure.location
+  provider_id       = var.pool_provider_id
+  display_name      = "SplitSecure"
+
+  attribute_mapping = {
+    "google.subject" = "assertion.subject"
+  }
+
+  saml {
+    idp_metadata_xml = splitsecure_saml2_identity_provider.gcp_federation.metadata_xml
+  }
+}
+
+# Each user gets the role on the project. The subject is the NameID: the requester's email.
+resource "google_project_iam_member" "federated_user" {
+  for_each = toset(var.user_emails)
+
+  project = var.project_id
+  role    = var.user_role
+  member  = "principal://iam.googleapis.com/${local.pool_path}/subject/${each.value}"
+}
+
+resource "splitsecure_connected_app" "gcp_console" {
+  issuer_vault_id = data.splitsecure_vault.gcp_access.id
+  issuer_id       = splitsecure_saml2_identity_provider.gcp_federation.id
+  template        = "saml2/gcp"
+  folder_id       = splitsecure_vault_folder.gcp.id
+  name            = "Google Cloud console (${var.pool_id})"
+
+  saml2 {
+    entity_id = "https://iam.googleapis.com/${local.provider_path}"
+    acs_url   = "https://auth.cloud.google/signin-callback/${local.provider_path}"
+  }
+
+  # The NameID is the requester's email.
+  field {
+    name  = "name_id_format"
+    value = "urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress"
+  }
+
+  field {
+    name      = "requester_email"
+    requester = "email"
+  }
+
+  name_id {
+    parts = ["field:requester_email"]
+  }
+
+  justification = "Let the team sign in to the Google Cloud console"
+}
+
+# Optional: let a principal or group use the app.
+resource "splitsecure_vault_grant" "app_use" {
+  count = var.grantee == "" ? 0 : 1
+
+  vault_id = data.splitsecure_vault.gcp_access.id
+  node_id  = splitsecure_connected_app.gcp_console.id
+  grantee  = var.grantee
+  tier     = "use"
+}
+```
+
+From the [`azure-saml`](https://github.com/splitsecure/terraform-provider-splitsecure/tree/main/examples/azure-saml) scenario:
+
+```terraform
+terraform {
+  required_version = ">= 1.11"
+
+  required_providers {
+    splitsecure = {
+      source = "splitsecure/splitsecure"
+    }
+    azuread = {
+      source  = "hashicorp/azuread"
+      version = ">= 3.0"
+    }
+    msgraph = {
+      source  = "microsoft/msgraph"
+      version = ">= 0.6"
+    }
+    random = {
+      source  = "hashicorp/random"
+      version = ">= 3.0"
+    }
+  }
+}
+
+# Reads SPLITSECURE_ORG_S2R, SPLITSECURE_SERVICE_ACCOUNT_S2R, SPLITSECURE_KEY_ID
+# and SPLITSECURE_PRIVATE_KEY.
+provider "splitsecure" {}
+
+# Both read the tenant and the credentials from the Azure CLI or the ARM_ environment variables.
+provider "azuread" {}
+
+# Federates the domain. The azuread provider has no resource for it.
+provider "msgraph" {}
+
+data "splitsecure_vault" "azure_access" {
+  name = var.vault_name
+}
+
+# The verified domains of the tenant.
+data "azuread_domains" "verified" {}
+
+# The folder that holds the records. Deleting it moves anything left inside to lost+found.
+resource "splitsecure_vault_folder" "azure" {
+  vault_id  = data.splitsecure_vault.azure_access.id
+  name      = var.folder_name
+  parent_id = var.parent_folder_id == "" ? null : var.parent_folder_id
+}
+
+# The identity provider that signs every SAML assertion. Entra ID trusts it once the domain is federated.
+resource "splitsecure_saml2_identity_provider" "entra_federation" {
+  vault_id  = data.splitsecure_vault.azure_access.id
+  folder_id = splitsecure_vault_folder.azure.id
+  name      = "Entra ID sign-in (${var.domain})"
+
+  justification = "Sign in to Entra ID with SAML for ${var.domain}"
+}
+
+# Entra ID finds a federated user by the immutable id in the NameID.
+resource "random_uuid" "immutable_id" {}
+
+# Entra ID needs a password to create the user. Federated sign-in does not use it.
+resource "random_password" "unused" {
+  length  = 32
+  special = true
+}
+
+resource "azuread_user" "federated" {
+  user_principal_name     = "${var.user_name}@${var.domain}"
+  display_name            = var.display_name
+  mail_nickname           = var.user_name
+  onpremises_immutable_id = random_uuid.immutable_id.result
+  password                = random_password.unused.result
+
+  lifecycle {
+    precondition {
+      condition     = contains([for d in data.azuread_domains.verified.domains : d.domain_name], var.domain)
+      error_message = "The domain is not a verified domain of the tenant. Add and verify it in Entra ID first."
+    }
+  }
+}
+
+resource "splitsecure_connected_app" "entra_user" {
+  issuer_vault_id = data.splitsecure_vault.azure_access.id
+  issuer_id       = splitsecure_saml2_identity_provider.entra_federation.id
+  template        = "saml2/microsoft-entra-id"
+  folder_id       = splitsecure_vault_folder.azure.id
+  name            = "Entra ID (${azuread_user.federated.user_principal_name})"
+
+  # The service provider values from Microsoft's federation metadata.
+  saml2 {
+    entity_id = "urn:federation:MicrosoftOnline"
+    acs_url   = "https://login.microsoftonline.com/login.srf"
+  }
+
+  # A persistent NameID that holds the user's immutable id.
+  field {
+    name  = "name_id_format"
+    value = "urn:oasis:names:tc:SAML:2.0:nameid-format:persistent"
+  }
+
+  field {
+    name  = "name_id"
+    value = azuread_user.federated.onpremises_immutable_id
+  }
+
+  field {
+    name  = "user_principal_name"
+    value = azuread_user.federated.user_principal_name
+  }
+
+  justification = "Let the team sign in to Entra ID as ${azuread_user.federated.user_principal_name}"
+}
+
+# Sends every sign-in of the domain to the identity provider. Destroy removes it before the identity provider.
+resource "msgraph_resource" "domain_federation" {
+  url = "domains/${var.domain}/federationConfiguration"
+  body = {
+    "@odata.type"                   = "#microsoft.graph.internalDomainFederation"
+    displayName                     = "SplitSecure"
+    issuerUri                       = splitsecure_saml2_identity_provider.entra_federation.provider_id
+    passiveSignInUri                = splitsecure_saml2_identity_provider.entra_federation.sso_url_post
+    signingCertificate              = splitsecure_saml2_identity_provider.entra_federation.signing_certificate_der
+    preferredAuthenticationProtocol = "saml"
+    federatedIdpMfaBehavior         = "acceptIfMfaDoneByFederatedIdp"
+  }
+
+  # The user's precondition refuses a domain that is not verified.
+  depends_on = [azuread_user.federated]
+}
+
+# Optional: let a principal or group use the app.
+resource "splitsecure_vault_grant" "app_use" {
+  count = var.grantee == "" ? 0 : 1
+
+  vault_id = data.splitsecure_vault.azure_access.id
+  node_id  = splitsecure_connected_app.entra_user.id
+  grantee  = var.grantee
+  tier     = "use"
 }
 ```
 
@@ -30,25 +437,32 @@ resource "splitsecure_saml2_identity_provider" "aws_console" {
 
 ### Required
 
-- `name` (String) Human-readable IdP name.
-- `team_s2r` (String) Team s2r URI the identity provider lives on.
+- `name` (String) Human-readable name. Changing it replaces the resource.
+- `vault_id` (String) Vault the identity provider is created in. Changing it replaces the resource.
 
 ### Optional
 
 > **NOTE**: [Write-only arguments](https://developer.hashicorp.com/terraform/language/resources/ephemeral#write-only-arguments) are supported in Terraform 1.11 and later.
 
-- `description` (String) Free-form description.
-- `justification` (String, [Write-only](https://developer.hashicorp.com/terraform/language/resources/ephemeral#write-only-arguments)) Justification text rendered to voters during the create proposal. Write-only -- never persisted to state. The delete proposal sends a generated 'terraform destroy' justification, so callers don't need to keep this set after the resource exists.
-- `notification_policy` (String) Notification policy for proposals against this IdP. One of: notify_everyone, allow_selective_notifications. Defaults to "notify_everyone".
-- `provider_id` (String) SAML EntityID stamped into the cert subject, the assertion <Issuer>, and the metadata entityID. Leave unset to get a server-generated https://<frontend-host>/saml/idp/<six-bip39-words> identifier (matches the web UI). Set explicitly for a stable URN-form EntityID.
+- `description` (String) Free-form description. Changing it replaces the resource.
+- `folder` (List of String) Folder path from the vault root to place the identity provider in, for example ["terraform", "prod"]. Missing folders are created, and they stay after a denied or cancelled create. Unset places it at the vault root. Changing it moves the record.
+- `folder_id` (String) Node id of an existing folder to place the identity provider in, such as the id of a splitsecure_vault_folder. Set at most one of folder and folder_id. Changing it moves the record.
+- `justification` (String, [Write-only](https://developer.hashicorp.com/terraform/language/resources/ephemeral#write-only-arguments)) Justification shown to approvers when the create needs approval. Write-only and never stored in state.
+- `not_after` (String) End of the signing certificate validity, as an RFC 3339 timestamp. Defaults to the server's choice. Changing it replaces the resource.
+- `not_before` (String) Start of the signing certificate validity, as an RFC 3339 timestamp. Defaults to the server's choice. Changing it replaces the resource.
+- `notification_policy` (String) Who is notified about requests against the identity provider. One of: notify_everyone, allow_selective_notifications. Changing it replaces the resource.
+- `sensitivity` (String) Sensitivity level of the identity provider. One of: low, medium, high, critical. Changing it replaces the resource.
+- `wait` (String, [Write-only](https://developer.hashicorp.com/terraform/language/resources/ephemeral#write-only-arguments)) How long the server holds the create open for approval before Terraform starts polling, as a Go duration such as "30s". Defaults to 0. Write-only and never stored in state.
 
 ### Read-Only
 
-- `id` (String) Resource s2r URI of the identity provider.
-- `metadata_xml` (String) SAML IdP metadata document built from the IdP's signing certificate, provider_id, and SSO URLs. Suitable for aws_iam_saml_provider.
-- `signing_certificate_der` (String) Base64-encoded DER X.509 signing certificate -- the same bytes as the contents of `signing_certificate_pem` between its BEGIN/END markers. Use this when a downstream consumer wants the unwrapped certificate body (e.g. the `<X509Certificate>` element of an SP metadata document).
-- `signing_certificate_pem` (String) PEM-encoded X.509 signing certificate the IdP attaches to assertions. Suitable for SPs that take the raw certificate (e.g. tls_certificate-style consumers, custom SAML stacks).
-- `signing_public_key_der` (String) Base64-encoded SubjectPublicKeyInfo DER -- the bytes between the BEGIN/END markers of `signing_public_key_pem`.
-- `signing_public_key_pem` (String) PEM-encoded SubjectPublicKeyInfo extracted from the signing certificate. Suitable for SPs that pin a bare public key rather than the wrapping certificate.
-- `sso_url_post` (String) Single sign-on URL (HTTP-POST binding). Server-assigned; not user-configurable.
-- `sso_url_redirect` (String) Single sign-on URL (HTTP-Redirect binding). Server-assigned; not user-configurable.
+- `id` (String) Record id in the vault. Also the import id as vault_id/id.
+- `idp_serial` (String) Serial number of the signing certificate issued to this IdP, in decimal.
+- `metadata_xml` (String) SAML IdP metadata document built from the signing certificate, provider_id and SSO URLs. Suitable for aws_iam_saml_provider.
+- `provider_id` (String) SAML EntityID used in the signing certificate subject, the assertion issuer and the metadata entityID.
+- `signing_certificate_der` (String) Base64-encoded DER of the signing certificate, the bytes between the markers of signing_certificate_pem.
+- `signing_certificate_pem` (String) PEM-encoded X.509 signing certificate the IdP attaches to assertions.
+- `signing_public_key_der` (String) Base64-encoded SubjectPublicKeyInfo DER, the bytes between the markers of signing_public_key_pem.
+- `signing_public_key_pem` (String) PEM-encoded SubjectPublicKeyInfo of the signing certificate, for service providers that pin a bare public key.
+- `sso_url_post` (String) Single sign-on URL for the HTTP-POST binding.
+- `sso_url_redirect` (String) Single sign-on URL for the HTTP-Redirect binding.

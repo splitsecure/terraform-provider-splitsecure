@@ -1,3 +1,4 @@
+//go:generate go run ./internal/templatedocs templates/guides/connected-app-templates.md.tmpl
 //go:generate go run github.com/hashicorp/terraform-plugin-docs/cmd/tfplugindocs generate --provider-name splitsecure --rendered-provider-name SplitSecure
 
 // Package main is the entry point for the SplitSecure Terraform provider.

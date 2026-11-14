@@ -1,19 +1,22 @@
-# Groups are named sets of principals used as grant targets. Terraform
-# manages locally-sourced groups only: SCIM groups are owned by the
-# IdP and the system "Everyone" group is implicit. The members list is
-# authoritative — principals added out of band are removed on the next
-# apply.
-#
-# Group mutations require the service account behind the provider to
-# hold the org admin role.
-#
-# Members are referenced by the email shown in the console; the
-# splitsecure_principal data source resolves each to its s2r (users and
-# service accounts alike).
-resource "splitsecure_group" "sre" {
-  name = "SRE"
+data "splitsecure_principal" "alice" {
+  email = "alice@example.com"
+}
+
+# A service account, by its own address.
+data "splitsecure_principal" "deploy_bot" {
+  email = var.deploy_bot_address
+}
+
+# Terraform owns the member set: a member not listed here is removed.
+resource "splitsecure_group" "platform" {
+  name = "Platform"
   members = [
-    data.splitsecure_principal.alice.s2r,  # a user
-    data.splitsecure_principal.ci_bot.s2r, # a service account
+    data.splitsecure_principal.alice.s2r,
+    data.splitsecure_principal.deploy_bot.s2r,
   ]
+}
+
+# Members are managed elsewhere, for example in the console.
+resource "splitsecure_group" "on_call" {
+  name = "On-call"
 }

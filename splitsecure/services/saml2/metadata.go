@@ -7,16 +7,11 @@ import (
 	"fmt"
 	"time"
 
-	saml2v2 "github.com/splitsecure/apis/gen/go/proto/splitsecure/saml2/v2"
+	saml2v3 "github.com/splitsecure/apis/gen/go/proto/splitsecure/enclaveservices/saml2/v3"
 )
 
-// idpMetadataXML renders the SAML 2.0 EntityDescriptor for an IdPState.
-// The output is byte-stable across reads: validUntil is anchored to
-// the signing cert's NotAfter so refreshing terraform does not produce
-// drift on every plan. Mirrors the rendering rules in priv's
-// common/saml2.MetadataOfIDPState; if those diverge, metadata_test.go's
-// golden fixture catches it.
-func idpMetadataXML(idp *saml2v2.IdPState) ([]byte, error) {
+// idpMetadataXML renders the SAML 2.0 EntityDescriptor for IdPParams, byte-stable across reads.
+func idpMetadataXML(idp *saml2v3.IdPParams) ([]byte, error) {
 	wantAuthnRequestsSigned := false
 	descriptor := idpSSODescriptor{
 		ProtocolSupportEnumeration: "urn:oasis:names:tc:SAML:2.0:protocol",
@@ -69,11 +64,7 @@ func idpMetadataXML(idp *saml2v2.IdPState) ([]byte, error) {
 	return append([]byte(xml.Header), body...), nil
 }
 
-// validUntilFromCert formats the cert's NotAfter as RFC 3339 so the
-// rendered XML is byte-stable across reads (NotAfter is set once at
-// mint time). A valid signing cert is a precondition for rendering
-// usable metadata, so a parse failure is a hard error rather than a
-// silent fallback that masks the real problem.
+// validUntilFromCert formats the cert's NotAfter as RFC 3339, which never changes after mint.
 func validUntilFromCert(der []byte) (string, error) {
 	cert, err := x509.ParseCertificate(der)
 	if err != nil {
@@ -82,10 +73,6 @@ func validUntilFromCert(der []byte) (string, error) {
 
 	return cert.NotAfter.UTC().Format(time.RFC3339), nil
 }
-
-// XML struct definitions for the SAML metadata document. Lowercased to
-// keep them package-private; renaming would diverge from priv's shapes
-// for no gain.
 
 type entityDescriptor struct {
 	XMLName          xml.Name          `xml:"urn:oasis:names:tc:SAML:2.0:metadata EntityDescriptor"`

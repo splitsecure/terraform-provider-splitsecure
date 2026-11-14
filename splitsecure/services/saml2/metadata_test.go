@@ -11,13 +11,13 @@ import (
 	"testing"
 	"time"
 
-	saml2v2 "github.com/splitsecure/apis/gen/go/proto/splitsecure/saml2/v2"
+	saml2v3 "github.com/splitsecure/apis/gen/go/proto/splitsecure/enclaveservices/saml2/v3"
 )
 
-// freshIDPState builds an IdPState with a fresh ECDSA cert valid 10
+// freshIDPParams builds an IdPParams with a fresh ECDSA cert valid 10
 // years out. Used by tests that don't care about the cert bytes
 // themselves, only that the cert parses and renders.
-func freshIDPState(t *testing.T) *saml2v2.IdPState {
+func freshIDPParams(t *testing.T) *saml2v3.IdPParams {
 	t.Helper()
 	priv, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	if err != nil {
@@ -34,7 +34,7 @@ func freshIDPState(t *testing.T) *saml2v2.IdPState {
 		t.Fatalf("creating test cert: %v", err)
 	}
 
-	return &saml2v2.IdPState{
+	return &saml2v3.IdPParams{
 		X509Certificate: der,
 		ProviderId:      "https://idp.example.com/saml/idp/test",
 		SsoUrl:          "https://companion.example.com/saml2/sp/login",
@@ -49,7 +49,7 @@ func freshIDPState(t *testing.T) *saml2v2.IdPState {
 func TestIdpMetadataXML_Idempotent(t *testing.T) {
 	t.Parallel()
 
-	state := freshIDPState(t)
+	state := freshIDPParams(t)
 	first, err := idpMetadataXML(state)
 	if err != nil {
 		t.Fatalf("idpMetadataXML (first call): %v", err)
@@ -69,7 +69,7 @@ func TestIdpMetadataXML_Idempotent(t *testing.T) {
 func TestIdpMetadataXML_HTTPPostOmitted(t *testing.T) {
 	t.Parallel()
 
-	state := freshIDPState(t)
+	state := freshIDPParams(t)
 	state.SsoUrlPost = ""
 	got, err := idpMetadataXML(state)
 	if err != nil {
@@ -90,7 +90,7 @@ func TestIdpMetadataXML_HTTPPostOmitted(t *testing.T) {
 func TestIdpMetadataXML_RejectsUnparseableCert(t *testing.T) {
 	t.Parallel()
 
-	state := &saml2v2.IdPState{
+	state := &saml2v3.IdPParams{
 		X509Certificate: []byte("not a real cert"),
 		ProviderId:      "https://idp.example.com/saml/idp/test",
 		SsoUrl:          "https://companion.example.com/saml2/sp/login",
