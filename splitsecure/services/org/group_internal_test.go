@@ -9,11 +9,16 @@ import (
 	"testing"
 
 	"connectrpc.com/connect"
+	"github.com/hashicorp/terraform-plugin-framework/datasource"
+	dschema "github.com/hashicorp/terraform-plugin-framework/datasource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
+	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	rschema "github.com/hashicorp/terraform-plugin-framework/resource/schema"
+	"github.com/hashicorp/terraform-plugin-framework/schema/validator"
 	"github.com/hashicorp/terraform-plugin-framework/tfsdk"
 	"github.com/hashicorp/terraform-plugin-framework/types"
+	"github.com/hashicorp/terraform-plugin-go/tftypes"
 
 	orgsvcv1 "github.com/splitsecure/apis/gen/go/proto/splitsecure/orgsvc/v1"
 	"github.com/splitsecure/apis/gen/go/proto/splitsecure/orgsvc/v1/orgsvcv1connect"
@@ -35,6 +40,7 @@ type fakeOrgClient struct {
 	listMembers []*orgsvcv1.GroupMember
 	listPages   [][]*orgsvcv1.GroupMember // when set, ListGroupMembers serves these pages via cursor
 	listErr     error
+	groupPages  [][]*orgsvcv1.Group // when set, ListGroups serves these pages via cursor
 }
 
 func (f *fakeOrgClient) RemoveGroupMember(
@@ -75,12 +81,12 @@ func (f *fakeOrgClient) ListGroupMembers(
 	}
 	if f.listPages != nil { // paginated mode: the cursor is the page index
 		i := 0
-		if c := req.Msg.GetCursor(); c != "" {
-			i, _ = strconv.Atoi(c)
+		if c := req.Msg.GetPage().GetDirectionOrCursor().GetCursor(); len(c) > 0 {
+			i, _ = strconv.Atoi(string(c))
 		}
 		resp := &orgsvcv1.ListGroupMembersResponse{Members: f.listPages[i]}
 		if i+1 < len(f.listPages) {
-			resp.NextCursor = strconv.Itoa(i + 1)
+			resp.NextCursor = []byte(strconv.Itoa(i + 1))
 		}
 
 		return connect.NewResponse(resp), nil
@@ -554,8 +560,8 @@ func TestReconcileMembers_AddPath(t *testing.T) {
 	})
 }
 
-// TestGroupRead_MemberState covers the null-vs-empty member-set branch
-// that keeps imported and member-less groups diff-free.
+// TestGroupRead_MemberState covers the unmanaged-vs-managed member-set branch:
+// a null set is never read, a set is refreshed.
 func TestGroupRead_MemberState(t *testing.T) {
 	t.Parallel()
 
@@ -570,9 +576,15 @@ func TestGroupRead_MemberState(t *testing.T) {
 		wantMembers  []string
 	}{
 		{
-			name:         "populated membership is refreshed from the server",
+			name:         "unmanaged membership stays null though the server has members",
 			listMembers:  []*orgsvcv1.GroupMember{{PrincipalS2R: "s2r:test:usr:a"}, {PrincipalS2R: "s2r:test:usr:b"}},
 			priorMembers: types.SetNull(types.StringType),
+			wantNull:     true,
+		},
+		{
+			name:         "managed membership is refreshed from the server",
+			listMembers:  []*orgsvcv1.GroupMember{{PrincipalS2R: "s2r:test:usr:a"}, {PrincipalS2R: "s2r:test:usr:b"}},
+			priorMembers: mustMemberSet(t, "s2r:test:usr:a"),
 			wantMembers:  []string{"s2r:test:usr:a", "s2r:test:usr:b"},
 		},
 		{
@@ -711,4 +723,265 @@ func groupStateForRead(t *testing.T, s rschema.Schema, model groupResourceModel)
 	}
 
 	return state
+}
+
+func (f *fakeOrgClient) ListGroups(
+	_ context.Context, req *connect.Request[orgsvcv1.ListGroupsRequest],
+) (*connect.Response[orgsvcv1.ListGroupsResponse], error) {
+	page := 0
+	if cursor := req.Msg.GetPage().GetDirectionOrCursor().GetCursor(); len(cursor) > 0 {
+		page = int(cursor[0])
+	}
+
+	resp := &orgsvcv1.ListGroupsResponse{Groups: f.groupPages[page]}
+	if page+1 < len(f.groupPages) {
+		resp.NextCursor = []byte{byte(page + 1)}
+	}
+
+	return connect.NewResponse(resp), nil
+}
+
+func namedGroups(pages ...[]*orgsvcv1.Group) *groupDataSource {
+	return &groupDataSource{client: &client.Client{
+		OrgService: &fakeOrgClient{groupPages: pages},
+		OrgS2R:     "s2r:test:org:x",
+	}}
+}
+
+func grp(s2r, name string, source orgsvcv1.GroupSource) *orgsvcv1.Group {
+	return &orgsvcv1.Group{GroupS2R: s2r, Name: name, Source: source}
+}
+
+func TestGroupDataSource_FindByName_MatchesAcrossPages(t *testing.T) {
+	t.Parallel()
+
+	d := namedGroups(
+		[]*orgsvcv1.Group{grp("g1", "ops", orgsvcv1.GroupSource_GROUP_SOURCE_LOCAL)},
+		[]*orgsvcv1.Group{grp("g2", "sre", orgsvcv1.GroupSource_GROUP_SOURCE_SCIM)},
+	)
+
+	got, err := d.findByName(context.Background(), "sre", "")
+	if err != nil || got.GetGroupS2R() != "g2" {
+		t.Fatalf("got %v, err %v", got, err)
+	}
+}
+
+func TestGroupDataSource_FindByName_ErrorsOnNoMatch(t *testing.T) {
+	t.Parallel()
+
+	d := namedGroups([]*orgsvcv1.Group{grp("g1", "ops", orgsvcv1.GroupSource_GROUP_SOURCE_LOCAL)})
+
+	_, err := d.findByName(context.Background(), "sre", "")
+	if !errors.Is(err, errGroupNotFound) {
+		t.Fatalf("err = %v, want errGroupNotFound", err)
+	}
+}
+
+func TestGroupDataSource_FindByName_ErrorsOnTwoMatches(t *testing.T) {
+	t.Parallel()
+
+	d := namedGroups(
+		[]*orgsvcv1.Group{grp("g1", "ops", orgsvcv1.GroupSource_GROUP_SOURCE_LOCAL)},
+		[]*orgsvcv1.Group{grp("g2", "ops", orgsvcv1.GroupSource_GROUP_SOURCE_SCIM)},
+	)
+
+	_, err := d.findByName(context.Background(), "ops", "")
+	if !errors.Is(err, errAmbiguousGroup) {
+		t.Fatalf("err = %v, want errAmbiguousGroup", err)
+	}
+}
+
+func TestGroupDataSource_FindByName_SourceSplitsDuplicateName(t *testing.T) {
+	t.Parallel()
+
+	d := namedGroups([]*orgsvcv1.Group{
+		grp("g1", "ops", orgsvcv1.GroupSource_GROUP_SOURCE_LOCAL),
+		grp("g2", "ops", orgsvcv1.GroupSource_GROUP_SOURCE_SCIM),
+	})
+
+	for source, want := range map[string]string{"local": "g1", "scim": "g2"} {
+		got, err := d.findByName(context.Background(), "ops", source)
+		if err != nil || got.GetGroupS2R() != want {
+			t.Errorf("source %q: got %v, err %v, want %s", source, got, err, want)
+		}
+	}
+}
+
+func TestGroupDataSource_SchemaRefusesBothOrNeitherOfS2RAndName(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+
+	resp := &datasource.SchemaResponse{}
+	NewGroupDataSource().Schema(ctx, datasource.SchemaRequest{}, resp)
+
+	attr, ok := resp.Schema.Attributes["group_s2r"].(dschema.StringAttribute)
+	if !ok {
+		t.Fatal("group_s2r is not a string attribute")
+	}
+
+	for name, tc := range map[string]struct {
+		s2r, name types.String
+		wantErr   bool
+	}{
+		"s2r only":  {types.StringValue("g1"), types.StringNull(), false},
+		"name only": {types.StringNull(), types.StringValue("ops"), false},
+		"both":      {types.StringValue("g1"), types.StringValue("ops"), true},
+		"neither":   {types.StringNull(), types.StringNull(), true},
+	} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			state := tfsdk.State{Schema: resp.Schema, Raw: tftypes.NewValue(resp.Schema.Type().TerraformType(ctx), nil)}
+
+			model := groupDataSourceModel{GroupS2R: tc.s2r, Name: tc.name, Source: types.StringNull()}
+			if diags := state.Set(ctx, &model); diags.HasError() {
+				t.Fatalf("building config: %v", diags)
+			}
+
+			var diags diag.Diagnostics
+
+			for _, v := range attr.Validators {
+				vr := &validator.StringResponse{}
+				v.ValidateString(ctx, validator.StringRequest{
+					Path:           path.Root("group_s2r"),
+					PathExpression: path.MatchRoot("group_s2r"),
+					Config:         tfsdk.Config{Schema: resp.Schema, Raw: state.Raw},
+					ConfigValue:    tc.s2r,
+				}, vr)
+				diags.Append(vr.Diagnostics...)
+			}
+
+			if diags.HasError() != tc.wantErr {
+				t.Errorf("errors = %v, want error %v", diags, tc.wantErr)
+			}
+		})
+	}
+}
+
+// memberCalls counts the group RPCs a test expects not to see.
+type memberCalls struct {
+	fakeOrgClient
+
+	lists, adds, removes int
+	members              []*orgsvcv1.GroupMember
+	addReq               *orgsvcv1.AddGroupMembersRequest
+	removeReq            *orgsvcv1.RemoveGroupMemberRequest
+}
+
+func (m *memberCalls) ListGroupMembers(
+	context.Context, *connect.Request[orgsvcv1.ListGroupMembersRequest],
+) (*connect.Response[orgsvcv1.ListGroupMembersResponse], error) {
+	m.lists++
+
+	return connect.NewResponse(&orgsvcv1.ListGroupMembersResponse{Members: m.members}), nil
+}
+
+func (m *memberCalls) AddGroupMembers(
+	_ context.Context, req *connect.Request[orgsvcv1.AddGroupMembersRequest],
+) (*connect.Response[orgsvcv1.AddGroupMembersResponse], error) {
+	m.adds++
+	m.addReq = req.Msg
+
+	return connect.NewResponse(&orgsvcv1.AddGroupMembersResponse{}), nil
+}
+
+func (m *memberCalls) RemoveGroupMember(
+	_ context.Context, req *connect.Request[orgsvcv1.RemoveGroupMemberRequest],
+) (*connect.Response[orgsvcv1.RemoveGroupMemberResponse], error) {
+	m.removes++
+	m.removeReq = req.Msg
+
+	return connect.NewResponse(&orgsvcv1.RemoveGroupMemberResponse{}), nil
+}
+
+func (m *memberCalls) UpdateGroup(
+	context.Context, *connect.Request[orgsvcv1.UpdateGroupRequest],
+) (*connect.Response[orgsvcv1.UpdateGroupResponse], error) {
+	return connect.NewResponse(&orgsvcv1.UpdateGroupResponse{}), nil
+}
+
+func TestGroupRead_UnmanagedMembersAreNeverListed(t *testing.T) {
+	t.Parallel()
+
+	s := groupResourceSchema(t)
+	org := &memberCalls{fakeOrgClient: fakeOrgClient{getGroup: &orgsvcv1.Group{GroupS2R: "g", Name: "SRE", Source: orgsvcv1.GroupSource_GROUP_SOURCE_LOCAL}}}
+
+	state := groupStateForRead(t, s, groupResourceModel{
+		GroupS2R: types.StringValue("g"), Name: types.StringValue("SRE"), Members: types.SetNull(types.StringType), Source: types.StringValue("local"),
+	})
+	resp := &resource.ReadResponse{State: state}
+
+	(&groupResource{client: &client.Client{OrgService: org}}).Read(context.Background(), resource.ReadRequest{State: state}, resp)
+
+	if resp.Diagnostics.HasError() || org.lists != 0 {
+		t.Errorf("lists = %d, diags = %v", org.lists, resp.Diagnostics)
+	}
+}
+
+func TestGroupUpdate_UnmanagedMembersMakeNoMemberCalls(t *testing.T) {
+	t.Parallel()
+
+	s := groupResourceSchema(t)
+	org := &memberCalls{}
+
+	prior := groupStateForRead(t, s, groupResourceModel{
+		GroupS2R: types.StringValue("g"), Name: types.StringValue("old"), Members: mustMemberSet(t, "s2r:test:usr:a"), Source: types.StringValue("local"),
+	})
+	next := groupStateForRead(t, s, groupResourceModel{
+		GroupS2R: types.StringValue("g"), Name: types.StringValue("new"), Members: types.SetNull(types.StringType), Source: types.StringValue("local"),
+	})
+
+	resp := &resource.UpdateResponse{State: prior}
+	(&groupResource{client: &client.Client{OrgService: org}}).Update(context.Background(),
+		resource.UpdateRequest{Plan: tfsdk.Plan{Schema: s, Raw: next.Raw}, State: prior}, resp)
+
+	if resp.Diagnostics.HasError() || org.adds+org.removes+org.lists != 0 {
+		t.Errorf("adds=%d removes=%d lists=%d diags=%v", org.adds, org.removes, org.lists, resp.Diagnostics)
+	}
+
+	var got groupResourceModel
+
+	resp.State.Get(context.Background(), &got)
+
+	if !got.Members.IsNull() || got.Name.ValueString() != "new" {
+		t.Errorf("state = %+v", got)
+	}
+}
+
+// An imported group, or one whose config newly sets members, has null members in state.
+func TestGroupUpdate_FirstAuthoritativeApplyRemovesLiveMembersTheConfigOmits(t *testing.T) {
+	t.Parallel()
+
+	s := groupResourceSchema(t)
+	org := &memberCalls{members: []*orgsvcv1.GroupMember{{PrincipalS2R: "s2r:test:usr:a"}, {PrincipalS2R: "s2r:test:usr:extra"}}}
+
+	prior := groupStateForRead(t, s, groupResourceModel{
+		GroupS2R: types.StringValue("g"), Name: types.StringValue("SRE"), Members: types.SetNull(types.StringType), Source: types.StringValue("local"),
+	})
+	next := groupStateForRead(t, s, groupResourceModel{
+		GroupS2R: types.StringValue("g"), Name: types.StringValue("SRE"), Members: mustMemberSet(t, "s2r:test:usr:a"), Source: types.StringValue("local"),
+	})
+
+	resp := &resource.UpdateResponse{State: prior}
+	(&groupResource{client: &client.Client{OrgService: org}}).Update(context.Background(),
+		resource.UpdateRequest{Plan: tfsdk.Plan{Schema: s, Raw: next.Raw}, State: prior}, resp)
+
+	if resp.Diagnostics.HasError() || org.removes != 1 || org.removeReq.GetPrincipalS2R() != "s2r:test:usr:extra" || org.adds != 0 {
+		t.Errorf("adds=%d removes=%d request=%v diags=%v", org.adds, org.removes, org.removeReq, resp.Diagnostics)
+	}
+}
+
+func TestGroupDataSource_FindByName_SkipsSystemGroupsUnlessSourceNamesThem(t *testing.T) {
+	t.Parallel()
+
+	d := namedGroups([]*orgsvcv1.Group{
+		grp("everyone", "Everyone", orgsvcv1.GroupSource_GROUP_SOURCE_SYSTEM),
+		grp("g1", "Everyone", orgsvcv1.GroupSource_GROUP_SOURCE_LOCAL),
+	})
+
+	got, err := d.findByName(context.Background(), "Everyone", "")
+	if err != nil || got.GetGroupS2R() != "g1" {
+		t.Errorf("got %v, err %v, want the local group", got, err)
+	}
 }

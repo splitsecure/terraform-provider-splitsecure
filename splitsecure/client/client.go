@@ -5,69 +5,91 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/hashicorp/go-retryablehttp"
 	"github.com/hashicorp/terraform-plugin-log/tflog"
 
-	conveniencestorev1connect "github.com/splitsecure/apis/gen/go/proto/splitsecure/conveniencestore/v1/conveniencestorev1connect"
-	enclaveroundtripv1connect "github.com/splitsecure/apis/gen/go/proto/splitsecure/enclaveroundtrip/v1/enclaveroundtripv1connect"
 	orgsvcv1connect "github.com/splitsecure/apis/gen/go/proto/splitsecure/orgsvc/v1/orgsvcv1connect"
-	proposalsv1connect "github.com/splitsecure/apis/gen/go/proto/splitsecure/proposals/v1/proposalsv1connect"
+	vaultbrowsev1connect "github.com/splitsecure/apis/gen/go/proto/splitsecure/vaultbrowse/v1/vaultbrowsev1connect"
+	vaultcatalogv1connect "github.com/splitsecure/apis/gen/go/proto/splitsecure/vaultcatalog/v1/vaultcatalogv1connect"
+	vaultusev1connect "github.com/splitsecure/apis/gen/go/proto/splitsecure/vaultuse/v1/vaultusev1connect"
+	"github.com/splitsecure/terraform-provider-splitsecure/splitsecure/authn"
 )
 
-// Client wraps the SplitSecure Connect RPC clients plus the
-// provider-level org_s2r used for proposal-scoped enclave spawning.
-// org_s2r is provider-scoped (not per-resource) because Send is the
-// only call that uses it -- once a proposal lands, every later
-// reference is by resource_s2r / proposal_id, neither of which
-// depends on the org. Multi-org users alias the provider.
-type Client struct {
-	ConvenienceStoreService conveniencestorev1connect.ConvenienceStoreServiceClient
-	EnclaveRoundtripService enclaveroundtripv1connect.EnclaveRoundtripServiceClient
-	ProposalsService        proposalsv1connect.ProposalsServiceClient
-	OrgService              orgsvcv1connect.OrgServiceClient
-	OrgS2R                  string
+// Config is what New needs to reach one deployment as one service account.
+type Config struct {
+	// Endpoint is the API origin, for example https://monolith.example.com.
+	Endpoint string
+	// OrgS2R is the org the provider acts in; see Client.OrgS2R.
+	OrgS2R  string
+	Version string
+	Key     *authn.Key
+	// Workload signs in with an external OIDC token instead of Key.
+	Workload *authn.Workload
 }
 
-// New creates a Client with retries, timeouts, and bearer auth. The
-// overall HTTP timeout is sized for long-running proposal polls: tf
-// create/delete waits out voter approval over many minutes, so
-// individual RPC calls see unary polls but the wrapper keeps the
-// connection pool happy across retries.
-func New(endpoint, bearerToken, orgS2R, version string) *Client {
-	userAgent := "terraform-provider-splitsecure/" + version
-	withAuth := func(wrapped http.RoundTripper) http.RoundTripper {
-		return &loggingTransport{token: bearerToken, userAgent: userAgent, wrapped: wrapped}
+// Client wraps the SplitSecure Connect RPC clients plus the provider-level
+// org_s2r, which the vault data source uses as its default org.
+type Client struct {
+	OrgService   orgsvcv1connect.OrgServiceClient
+	VaultUse     vaultusev1connect.VaultUseServiceClient
+	VaultBrowse  vaultbrowsev1connect.VaultBrowseServiceClient
+	VaultCatalog vaultcatalogv1connect.VaultCatalogServiceClient
+	OrgS2R       string
+	// PrincipalS2R is the service account the client signs in as.
+	PrincipalS2R string
+}
+
+// New creates a Client with timeouts and service account auth.
+func New(cfg Config) (*Client, error) {
+	userAgent := "terraform-provider-splitsecure/" + cfg.Version
+
+	// One transport, so every client shares the service token and the DPoP
+	// key it is bound to.
+	auth, err := authn.NewTransport(authn.Config{
+		Endpoint:     cfg.Endpoint,
+		Key:          cfg.Key,
+		Workload:     cfg.Workload,
+		Organization: cfg.OrgS2R,
+		UserAgent:    userAgent,
+	})
+	if err != nil {
+		return nil, err
 	}
+	logged := &loggingTransport{userAgent: userAgent, wrapped: auth}
 
-	// Retrying client for the long-running enclave / proposal flow.
-	retryClient := retryablehttp.NewClient()
-	retryClient.RetryMax = 3
-	retryClient.Logger = nil
-	httpClient := retryClient.StandardClient()
-	httpClient.Timeout = 1 * time.Minute
-	httpClient.Transport = withAuth(httpClient.Transport)
-
-	// OrgService carries non-idempotent mutations (CreateGroup / UpdateGroup /
-	// DeleteGroup / PutGrant / DeleteGrant). Every Connect RPC is a POST, so
-	// retryablehttp can't scope retries by method and would replay a committed
-	// write if the response is lost. Give it a non-retrying client; resource
-	// create paths that need it do their own bounded, condition-scoped retries.
-	orgHTTPClient := &http.Client{
+	// Every Connect RPC is a POST, so a retrying client would replay a committed write if the response is lost.
+	httpClient := &http.Client{
 		Timeout:   1 * time.Minute,
-		Transport: withAuth(http.DefaultTransport),
+		Transport: logged,
 	}
+
+	// A vault create may wait on approvers and PollTicket is a long poll, so
+	// the call context bounds the request instead of a client timeout.
+	vaultUseHTTPClient := &http.Client{Transport: logged}
 
 	return &Client{
-		ConvenienceStoreService: conveniencestorev1connect.NewConvenienceStoreServiceClient(httpClient, endpoint),
-		EnclaveRoundtripService: enclaveroundtripv1connect.NewEnclaveRoundtripServiceClient(httpClient, endpoint),
-		ProposalsService:        proposalsv1connect.NewProposalsServiceClient(httpClient, endpoint),
-		OrgService:              orgsvcv1connect.NewOrgServiceClient(orgHTTPClient, endpoint),
-		OrgS2R:                  orgS2R,
+		OrgService:   orgsvcv1connect.NewOrgServiceClient(httpClient, cfg.Endpoint),
+		VaultUse:     vaultusev1connect.NewVaultUseServiceClient(vaultUseHTTPClient, cfg.Endpoint),
+		VaultBrowse:  vaultbrowsev1connect.NewVaultBrowseServiceClient(httpClient, cfg.Endpoint),
+		VaultCatalog: vaultcatalogv1connect.NewVaultCatalogServiceClient(httpClient, cfg.Endpoint),
+		OrgS2R:       cfg.OrgS2R,
+		PrincipalS2R: principalOf(cfg),
+	}, nil
+}
+
+// principalOf returns the service account s2r of whichever credential is set.
+func principalOf(cfg Config) string {
+	if cfg.Key != nil {
+		return cfg.Key.ServiceAccountS2R
 	}
+
+	if cfg.Workload != nil {
+		return cfg.Workload.ServiceAccountS2R
+	}
+
+	return ""
 }
 
 type loggingTransport struct {
-	token     string
 	userAgent string
 	wrapped   http.RoundTripper
 }
@@ -76,7 +98,6 @@ func (t *loggingTransport) RoundTrip(req *http.Request) (*http.Response, error) 
 	ctx := req.Context()
 
 	req = req.Clone(ctx)
-	req.Header.Set("Authorization", "Bearer "+t.token)
 	req.Header.Set("User-Agent", t.userAgent)
 
 	tflog.Debug(ctx, "API request", map[string]any{

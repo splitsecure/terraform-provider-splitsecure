@@ -8,14 +8,12 @@ import (
 	rschema "github.com/hashicorp/terraform-plugin-framework/resource/schema"
 )
 
-// schemaForResource pulls the schema out of a resource by calling its
-// Schema(...) method directly. Avoids depending on terraform-plugin-go
-// or the framework's plumbing.
-func schemaForResource(t *testing.T, r resource.Resource) rschema.Schema {
+func schemaForResource(ctx context.Context, t *testing.T, r resource.Resource) rschema.Schema {
 	t.Helper()
 
 	resp := &resource.SchemaResponse{}
-	r.Schema(context.Background(), resource.SchemaRequest{}, resp)
+	r.Schema(ctx, resource.SchemaRequest{}, resp)
+
 	if resp.Diagnostics.HasError() {
 		t.Fatalf("schema diagnostics: %v", resp.Diagnostics)
 	}
@@ -26,14 +24,14 @@ func schemaForResource(t *testing.T, r resource.Resource) rschema.Schema {
 func TestIDPSchema_RequiredAttributes(t *testing.T) {
 	t.Parallel()
 
-	s := schemaForResource(t, &saml2IdentityProvider{})
+	s := schemaForResource(context.Background(), t, NewIdentityProviderResource())
 
-	required := []string{"team_s2r", "name"}
-	for _, name := range required {
+	for _, name := range []string{"vault_id", "name"} {
 		attr, ok := s.Attributes[name]
 		if !ok {
-			t.Fatalf("required attribute %q missing from IdP schema", name)
+			t.Fatalf("required attribute %q missing", name)
 		}
+
 		if !attr.IsRequired() {
 			t.Errorf("attribute %q should be Required", name)
 		}
@@ -43,133 +41,66 @@ func TestIDPSchema_RequiredAttributes(t *testing.T) {
 func TestIDPSchema_ComputedAttributes(t *testing.T) {
 	t.Parallel()
 
-	s := schemaForResource(t, &saml2IdentityProvider{})
+	s := schemaForResource(context.Background(), t, NewIdentityProviderResource())
 
 	for _, name := range []string{
 		"id",
-		"metadata_xml",
+		"provider_id",
 		"sso_url_redirect",
 		"sso_url_post",
+		"metadata_xml",
 		"signing_certificate_pem",
 		"signing_certificate_der",
 		"signing_public_key_pem",
 		"signing_public_key_der",
+		"idp_serial",
 	} {
 		attr, ok := s.Attributes[name]
 		if !ok {
-			t.Fatalf("computed attribute %q missing from IdP schema", name)
+			t.Fatalf("computed attribute %q missing", name)
 		}
-		if !attr.IsComputed() {
-			t.Errorf("attribute %q should be Computed", name)
+
+		if !attr.IsComputed() || attr.IsOptional() || attr.IsRequired() {
+			t.Errorf("attribute %q should be Computed only", name)
 		}
 	}
 }
 
-func TestIDPSchema_WriteOnlyJustification(t *testing.T) {
+func TestIDPSchema_OptionalInputs(t *testing.T) {
 	t.Parallel()
 
-	s := schemaForResource(t, &saml2IdentityProvider{})
+	s := schemaForResource(context.Background(), t, NewIdentityProviderResource())
 
-	attr, ok := s.Attributes["justification"]
-	if !ok {
-		t.Fatal("justification attribute missing from IdP schema")
-	}
-	if !attr.IsWriteOnly() {
-		t.Error("justification should be WriteOnly so it never lands in state")
-	}
-	if attr.IsRequired() {
-		t.Error("justification should be Optional, not Required")
-	}
-}
-
-func TestSPSchema_RequiredAttributes(t *testing.T) {
-	t.Parallel()
-
-	s := schemaForResource(t, &saml2ServiceProvider{})
-
-	for _, name := range []string{"team_s2r", "idp_resource_s2r", "name", "acs_url"} {
+	for _, name := range []string{"description", "not_before", "not_after", "notification_policy", "sensitivity", "justification", "wait"} {
 		attr, ok := s.Attributes[name]
 		if !ok {
-			t.Fatalf("required attribute %q missing from SP schema", name)
+			t.Fatalf("attribute %q missing", name)
 		}
-		if !attr.IsRequired() {
-			t.Errorf("attribute %q should be Required", name)
-		}
-	}
-}
 
-func TestSPSchema_ComputedAttributes(t *testing.T) {
-	t.Parallel()
-
-	s := schemaForResource(t, &saml2ServiceProvider{})
-
-	for _, name := range []string{"id", "account_type"} {
-		attr, ok := s.Attributes[name]
-		if !ok {
-			t.Fatalf("computed attribute %q missing from SP schema", name)
-		}
-		if !attr.IsComputed() {
-			t.Errorf("attribute %q should be Computed", name)
+		if !attr.IsOptional() {
+			t.Errorf("attribute %q should be Optional", name)
 		}
 	}
 }
 
-func TestSPSchema_WriteOnlyJustification(t *testing.T) {
+func TestIDPSchema_WriteOnlyCreateOptions(t *testing.T) {
 	t.Parallel()
 
-	s := schemaForResource(t, &saml2ServiceProvider{})
+	s := schemaForResource(context.Background(), t, NewIdentityProviderResource())
 
-	attr, ok := s.Attributes["justification"]
-	if !ok {
-		t.Fatal("justification attribute missing from SP schema")
-	}
-	if !attr.IsWriteOnly() {
-		t.Error("justification should be WriteOnly")
-	}
-}
-
-func TestSPSchema_AccountBlockHasAllVariants(t *testing.T) {
-	t.Parallel()
-
-	s := schemaForResource(t, &saml2ServiceProvider{})
-
-	accountBlock, ok := s.Blocks["account"]
-	if !ok {
-		t.Fatal("account block missing from SP schema")
-	}
-	nested, ok := accountBlock.(rschema.SingleNestedBlock)
-	if !ok {
-		t.Fatalf("account is %T, want SingleNestedBlock", accountBlock)
-	}
-
-	for _, k := range spAccountKinds() {
-		if _, ok := nested.Blocks[k]; !ok {
-			t.Errorf("account.%s sub-block missing from schema", k)
+	for _, name := range []string{"justification", "wait"} {
+		if !s.Attributes[name].IsWriteOnly() {
+			t.Errorf("%q should be WriteOnly so it never lands in state", name)
 		}
 	}
 }
 
-// TestSPSchema_AccountKindValidatorMatches asserts the kind attribute
-// inside the account block has a OneOf validator covering exactly the
-// list spAccountKinds returns. Catches the "added a kind constant,
-// forgot to add it to the validator" mistake.
-func TestSPSchema_AccountKindValidatorMatches(t *testing.T) {
+func TestIDPSchema_RemovedProposalAttributes(t *testing.T) {
 	t.Parallel()
 
-	s := schemaForResource(t, &saml2ServiceProvider{})
+	s := schemaForResource(context.Background(), t, NewIdentityProviderResource())
 
-	accountBlock, ok := s.Blocks["account"].(rschema.SingleNestedBlock)
-	if !ok {
-		t.Fatalf("account block has wrong type")
-	}
-	kindAttr, ok := accountBlock.Attributes["kind"].(rschema.StringAttribute)
-	if !ok {
-		t.Fatalf("account.kind has wrong type: %T", accountBlock.Attributes["kind"])
-	}
-	if !kindAttr.IsRequired() {
-		t.Error("account.kind should be Required")
-	}
-	if len(kindAttr.Validators) == 0 {
-		t.Fatal("account.kind should have at least one validator (OneOf)")
+	if _, ok := s.Attributes["team_s2r"]; ok {
+		t.Error("team_s2r belongs to the proposal flow and should be gone")
 	}
 }

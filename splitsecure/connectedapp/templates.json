@@ -1,0 +1,868 @@
+{
+	"templates": [
+		{
+			"name": "oidc/aws",
+			"title": "AWS (OIDC)",
+			"protocol": "oidc",
+			"signingAlgs": [
+				"ES256",
+				"ES384"
+			],
+			"fields": [
+				{
+					"name": "role_arn",
+					"label": "Role ARN",
+					"type": "string",
+					"repeatable": false,
+					"required": true,
+					"sources": [
+						"fixed"
+					]
+				},
+				{
+					"name": "subject",
+					"label": "Subject",
+					"type": "string",
+					"repeatable": false,
+					"required": true,
+					"sources": [
+						"derivedAtCreation"
+					]
+				},
+				{
+					"name": "session_duration",
+					"label": "Session duration",
+					"type": "duration",
+					"repeatable": false,
+					"required": true,
+					"sources": [
+						"fixed",
+						"modifiable"
+					],
+					"minSeconds": 900,
+					"maxSeconds": 43200
+				},
+				{
+					"name": "source_identity",
+					"label": "Source identity",
+					"type": "string",
+					"repeatable": false,
+					"required": true,
+					"sources": [
+						"requester"
+					],
+					"requesters": [
+						"REQUESTER_SESSION_NAME"
+					]
+				},
+				{
+					"name": "token_id",
+					"label": "Token ID",
+					"type": "string",
+					"repeatable": false,
+					"required": true,
+					"sources": [
+						"derivedPerSignIn"
+					]
+				},
+				{
+					"name": "session_tag",
+					"label": "Session tag",
+					"type": "string",
+					"repeatable": true,
+					"required": false,
+					"sources": [
+						"fixed",
+						"modifiable",
+						"requester"
+					],
+					"requesters": [
+						"REQUESTER_SESSION_NAME",
+						"REQUESTER_EMAIL"
+					]
+				}
+			],
+			"layout": {
+				"subject": {
+					"parts": [
+						{
+							"field": {
+								"name": "subject"
+							}
+						}
+					]
+				},
+				"audience": {
+					"parts": [
+						{
+							"text": "sts.amazonaws.com"
+						}
+					]
+				},
+				"lifetime": {
+					"exchangeWindow": {}
+				},
+				"tokenId": {
+					"name": "token_id"
+				},
+				"claims": [
+					{
+						"path": [
+							"https://aws.amazon.com/roles"
+						],
+						"value": {
+							"parts": [
+								{
+									"field": {
+										"name": "role_arn"
+									}
+								}
+							]
+						},
+						"wrapInList": true
+					},
+					{
+						"path": [
+							"https://aws.amazon.com/source_identity"
+						],
+						"value": {
+							"parts": [
+								{
+									"field": {
+										"name": "source_identity"
+									}
+								}
+							]
+						}
+					},
+					{
+						"path": [
+							"https://aws.amazon.com/tags",
+							"principal_tags",
+							"SplitSecureTokenId"
+						],
+						"value": {
+							"parts": [
+								{
+									"field": {
+										"name": "token_id"
+									}
+								}
+							]
+						},
+						"wrapInList": true
+					}
+				],
+				"requestedClientDuration": {
+					"name": "session_duration"
+				}
+			},
+			"each": [
+				{
+					"field": "session_tag",
+					"pathPrefix": [
+						"https://aws.amazon.com/tags",
+						"principal_tags"
+					],
+					"wrapInList": true
+				}
+			]
+		},
+		{
+			"name": "oidc/azure",
+			"title": "Microsoft Entra ID",
+			"protocol": "oidc",
+			"signingAlgs": [
+				"RS256"
+			],
+			"fields": [
+				{
+					"name": "tenant_id",
+					"label": "Tenant ID",
+					"type": "string",
+					"repeatable": false,
+					"required": true,
+					"sources": [
+						"fixed"
+					]
+				},
+				{
+					"name": "client_id",
+					"label": "Client ID",
+					"type": "string",
+					"repeatable": false,
+					"required": true,
+					"sources": [
+						"fixed"
+					]
+				},
+				{
+					"name": "subject",
+					"label": "Subject",
+					"type": "string",
+					"repeatable": false,
+					"required": true,
+					"sources": [
+						"derivedAtCreation"
+					]
+				},
+				{
+					"name": "lifetime",
+					"label": "Token lifetime",
+					"type": "duration",
+					"repeatable": false,
+					"required": true,
+					"sources": [
+						"fixed",
+						"modifiable"
+					],
+					"minSeconds": 60,
+					"maxSeconds": 3600
+				},
+				{
+					"name": "token_id",
+					"label": "Token ID",
+					"type": "string",
+					"repeatable": false,
+					"required": true,
+					"sources": [
+						"derivedPerSignIn"
+					]
+				}
+			],
+			"layout": {
+				"subject": {
+					"parts": [
+						{
+							"field": {
+								"name": "subject"
+							}
+						}
+					]
+				},
+				"audience": {
+					"parts": [
+						{
+							"text": "api://AzureADTokenExchange"
+						}
+					]
+				},
+				"lifetime": {
+					"field": {
+						"name": "lifetime"
+					}
+				},
+				"tokenId": {
+					"name": "token_id"
+				}
+			},
+			"each": []
+		},
+		{
+			"name": "oidc/gcp",
+			"title": "Google Cloud",
+			"protocol": "oidc",
+			"signingAlgs": [
+				"ES256"
+			],
+			"fields": [
+				{
+					"name": "project_number",
+					"label": "Project number",
+					"type": "string",
+					"repeatable": false,
+					"required": true,
+					"sources": [
+						"fixed"
+					]
+				},
+				{
+					"name": "pool_id",
+					"label": "Workload identity pool",
+					"type": "string",
+					"repeatable": false,
+					"required": true,
+					"sources": [
+						"fixed"
+					]
+				},
+				{
+					"name": "provider_id",
+					"label": "Pool provider",
+					"type": "string",
+					"repeatable": false,
+					"required": true,
+					"sources": [
+						"fixed"
+					]
+				},
+				{
+					"name": "service_account_email",
+					"label": "Service account",
+					"type": "string",
+					"repeatable": false,
+					"required": true,
+					"sources": [
+						"fixed"
+					]
+				},
+				{
+					"name": "subject",
+					"label": "Subject",
+					"type": "string",
+					"repeatable": false,
+					"required": true,
+					"sources": [
+						"derivedAtCreation"
+					]
+				},
+				{
+					"name": "access_token_lifetime",
+					"label": "Access token lifetime",
+					"type": "duration",
+					"repeatable": false,
+					"required": true,
+					"sources": [
+						"fixed",
+						"modifiable"
+					],
+					"minSeconds": 60,
+					"maxSeconds": 43200
+				},
+				{
+					"name": "token_id",
+					"label": "Token ID",
+					"type": "string",
+					"repeatable": false,
+					"required": true,
+					"sources": [
+						"derivedPerSignIn"
+					]
+				},
+				{
+					"name": "claim",
+					"label": "Claim",
+					"type": "string",
+					"repeatable": true,
+					"required": false,
+					"sources": [
+						"fixed",
+						"modifiable",
+						"requester"
+					],
+					"requesters": [
+						"REQUESTER_SESSION_NAME",
+						"REQUESTER_EMAIL"
+					]
+				},
+				{
+					"name": "claim_list",
+					"label": "Claim",
+					"type": "stringList",
+					"repeatable": true,
+					"required": false,
+					"sources": [
+						"fixed",
+						"modifiable"
+					]
+				}
+			],
+			"layout": {
+				"subject": {
+					"parts": [
+						{
+							"field": {
+								"name": "subject"
+							}
+						}
+					]
+				},
+				"audience": {
+					"parts": [
+						{
+							"text": "https://iam.googleapis.com/projects/"
+						},
+						{
+							"field": {
+								"name": "project_number"
+							}
+						},
+						{
+							"text": "/locations/global/workloadIdentityPools/"
+						},
+						{
+							"field": {
+								"name": "pool_id"
+							}
+						},
+						{
+							"text": "/providers/"
+						},
+						{
+							"field": {
+								"name": "provider_id"
+							}
+						}
+					]
+				},
+				"lifetime": {
+					"exchangeWindow": {}
+				},
+				"tokenId": {
+					"name": "token_id"
+				},
+				"requestedClientDuration": {
+					"name": "access_token_lifetime"
+				}
+			},
+			"each": [
+				{
+					"field": "claim"
+				},
+				{
+					"field": "claim_list"
+				}
+			]
+		},
+		{
+			"name": "oidc/generic",
+			"title": "Generic OIDC",
+			"protocol": "oidc",
+			"fields": [
+				{
+					"name": "audience",
+					"label": "Audience",
+					"type": "string",
+					"repeatable": false,
+					"required": true,
+					"sources": [
+						"fixed"
+					]
+				},
+				{
+					"name": "subject",
+					"label": "Subject",
+					"type": "string",
+					"repeatable": false,
+					"required": true,
+					"sources": [
+						"fixed",
+						"derivedAtCreation"
+					]
+				},
+				{
+					"name": "claims",
+					"label": "Claims",
+					"type": "jsonObject",
+					"repeatable": false,
+					"required": false,
+					"sources": [
+						"fixed"
+					]
+				},
+				{
+					"name": "lifetime",
+					"label": "Token lifetime",
+					"type": "duration",
+					"repeatable": false,
+					"required": true,
+					"sources": [
+						"fixed",
+						"modifiable"
+					],
+					"minSeconds": 60,
+					"maxSeconds": 43200
+				},
+				{
+					"name": "token_id",
+					"label": "Token ID",
+					"type": "string",
+					"repeatable": false,
+					"required": true,
+					"sources": [
+						"derivedPerSignIn"
+					]
+				},
+				{
+					"name": "claim",
+					"label": "Claim",
+					"type": "string",
+					"repeatable": true,
+					"required": false,
+					"sources": [
+						"fixed",
+						"modifiable",
+						"requester"
+					],
+					"requesters": [
+						"REQUESTER_SESSION_NAME",
+						"REQUESTER_EMAIL"
+					]
+				},
+				{
+					"name": "claim_list",
+					"label": "Claim",
+					"type": "stringList",
+					"repeatable": true,
+					"required": false,
+					"sources": [
+						"fixed",
+						"modifiable"
+					]
+				}
+			],
+			"layout": {
+				"subject": {
+					"parts": [
+						{
+							"field": {
+								"name": "subject"
+							}
+						}
+					]
+				},
+				"audience": {
+					"parts": [
+						{
+							"field": {
+								"name": "audience"
+							}
+						}
+					]
+				},
+				"lifetime": {
+					"field": {
+						"name": "lifetime"
+					}
+				},
+				"tokenId": {
+					"name": "token_id"
+				},
+				"claims": [
+					{
+						"value": {
+							"parts": [
+								{
+									"field": {
+										"name": "claims"
+									}
+								}
+							]
+						}
+					}
+				]
+			},
+			"each": [
+				{
+					"field": "claim"
+				},
+				{
+					"field": "claim_list"
+				}
+			]
+		},
+		{
+			"name": "saml2/aws",
+			"title": "AWS (SAML)",
+			"protocol": "saml2",
+			"fields": [
+				{
+					"name": "saml_provider_arn",
+					"label": "SAML provider ARN",
+					"type": "string",
+					"repeatable": false,
+					"required": true,
+					"sources": [
+						"fixed"
+					]
+				},
+				{
+					"name": "role_arn",
+					"label": "Role ARN",
+					"type": "string",
+					"repeatable": false,
+					"required": true,
+					"sources": [
+						"fixed"
+					]
+				},
+				{
+					"name": "session_duration",
+					"label": "Session duration",
+					"type": "duration",
+					"repeatable": false,
+					"required": true,
+					"sources": [
+						"fixed",
+						"modifiable"
+					],
+					"minSeconds": 900,
+					"maxSeconds": 43200
+				},
+				{
+					"name": "role_session_name",
+					"label": "Role session name",
+					"type": "string",
+					"repeatable": false,
+					"required": true,
+					"sources": [
+						"requester"
+					],
+					"requesters": [
+						"REQUESTER_SESSION_NAME"
+					]
+				},
+				{
+					"name": "session_tag",
+					"label": "Session tag",
+					"type": "string",
+					"repeatable": true,
+					"required": false,
+					"sources": [
+						"fixed",
+						"modifiable",
+						"requester"
+					],
+					"requesters": [
+						"REQUESTER_SESSION_NAME",
+						"REQUESTER_EMAIL"
+					]
+				},
+				{
+					"name": "name_id_format",
+					"label": "NameID format",
+					"type": "string",
+					"repeatable": false,
+					"required": true,
+					"sources": [
+						"fixed"
+					],
+					"choices": [
+						"urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress",
+						"urn:oasis:names:tc:SAML:2.0:nameid-format:persistent",
+						"urn:oasis:names:tc:SAML:2.0:nameid-format:transient",
+						"urn:oasis:names:tc:SAML:1.1:nameid-format:unspecified"
+					]
+				},
+				{
+					"name": "name_id",
+					"label": "NameID",
+					"type": "string",
+					"repeatable": false,
+					"required": false,
+					"sources": [
+						"fixed",
+						"modifiable",
+						"derivedAtCreation",
+						"derivedPerSignIn"
+					]
+				},
+				{
+					"name": "requester_email",
+					"label": "Requester's email",
+					"type": "string",
+					"repeatable": false,
+					"required": false,
+					"sources": [
+						"requester"
+					],
+					"requesters": [
+						"REQUESTER_EMAIL"
+					]
+				},
+				{
+					"name": "requester_session_name",
+					"label": "Requester's session name",
+					"type": "string",
+					"repeatable": false,
+					"required": false,
+					"sources": [
+						"requester"
+					],
+					"requesters": [
+						"REQUESTER_SESSION_NAME"
+					]
+				}
+			],
+			"layout": {
+				"audience": {
+					"fixed": "https://signin.aws.amazon.com/saml"
+				},
+				"nameId": {
+					"format": {
+						"parts": [
+							{
+								"field": {
+									"name": "name_id_format"
+								}
+							}
+						]
+					},
+					"value": {
+						"parts": [
+							{
+								"field": {
+									"name": "name_id"
+								}
+							}
+						]
+					}
+				},
+				"attributes": [
+					{
+						"name": "https://aws.amazon.com/SAML/Attributes/Role",
+						"value": {
+							"parts": [
+								{
+									"field": {
+										"name": "role_arn"
+									}
+								},
+								{
+									"text": ","
+								},
+								{
+									"field": {
+										"name": "saml_provider_arn"
+									}
+								}
+							]
+						}
+					},
+					{
+						"name": "https://aws.amazon.com/SAML/Attributes/RoleSessionName",
+						"value": {
+							"parts": [
+								{
+									"field": {
+										"name": "role_session_name"
+									}
+								}
+							]
+						}
+					},
+					{
+						"name": "https://aws.amazon.com/SAML/Attributes/SessionDuration",
+						"value": {
+							"parts": [
+								{
+									"durationSeconds": {
+										"name": "session_duration"
+									}
+								}
+							]
+						}
+					}
+				]
+			},
+			"each": [
+				{
+					"field": "session_tag",
+					"namePrefix": "https://aws.amazon.com/SAML/Attributes/PrincipalTag:"
+				}
+			]
+		},
+		{
+			"name": "saml2/generic",
+			"title": "Generic SAML",
+			"protocol": "saml2",
+			"fields": [
+				{
+					"name": "name_id_format",
+					"label": "NameID format",
+					"type": "string",
+					"repeatable": false,
+					"required": true,
+					"sources": [
+						"fixed"
+					],
+					"choices": [
+						"urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress",
+						"urn:oasis:names:tc:SAML:2.0:nameid-format:persistent",
+						"urn:oasis:names:tc:SAML:2.0:nameid-format:transient",
+						"urn:oasis:names:tc:SAML:1.1:nameid-format:unspecified"
+					]
+				},
+				{
+					"name": "name_id",
+					"label": "NameID",
+					"type": "string",
+					"repeatable": false,
+					"required": false,
+					"sources": [
+						"fixed",
+						"modifiable",
+						"derivedAtCreation",
+						"derivedPerSignIn"
+					]
+				},
+				{
+					"name": "requester_email",
+					"label": "Requester's email",
+					"type": "string",
+					"repeatable": false,
+					"required": false,
+					"sources": [
+						"requester"
+					],
+					"requesters": [
+						"REQUESTER_EMAIL"
+					]
+				},
+				{
+					"name": "requester_session_name",
+					"label": "Requester's session name",
+					"type": "string",
+					"repeatable": false,
+					"required": false,
+					"sources": [
+						"requester"
+					],
+					"requesters": [
+						"REQUESTER_SESSION_NAME"
+					]
+				},
+				{
+					"name": "attribute",
+					"label": "Attribute",
+					"type": "stringList",
+					"repeatable": true,
+					"required": false,
+					"sources": [
+						"fixed"
+					]
+				}
+			],
+			"layout": {
+				"audience": {
+					"entityId": {}
+				},
+				"nameId": {
+					"format": {
+						"parts": [
+							{
+								"field": {
+									"name": "name_id_format"
+								}
+							}
+						]
+					},
+					"value": {
+						"parts": [
+							{
+								"field": {
+									"name": "name_id"
+								}
+							}
+						]
+					}
+				}
+			},
+			"each": [
+				{
+					"field": "attribute"
+				}
+			]
+		}
+	]
+}
