@@ -13,8 +13,10 @@ import (
 	"time"
 
 	"connectrpc.com/connect"
+	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/durationpb"
 
+	openpgpv1 "github.com/splitsecure/apis/gen/go/proto/splitsecure/enclaveservices/openpgp/v1"
 	vaultusev1 "github.com/splitsecure/apis/gen/go/proto/splitsecure/vaultuse/v1"
 	"github.com/splitsecure/apis/gen/go/proto/splitsecure/vaultuse/v1/vaultusev1connect"
 	"github.com/splitsecure/terraform-provider-splitsecure/splitsecure/authn"
@@ -23,8 +25,8 @@ import (
 
 const (
 	// approvalWindow is how long approvers have before the request expires.
-	approvalWindow = 150 * time.Second
-	runTimeout     = 3 * time.Minute
+	approvalWindow = 5 * time.Minute
+	runTimeout     = 6 * time.Minute
 
 	sigTypeBinary = 0x00
 )
@@ -145,10 +147,22 @@ func sign(ctx context.Context, opts options) ([]byte, error) {
 		return nil, fmt.Errorf("waiting for approval: %w", err)
 	}
 
-	signature := result.GetClearValue()
-	if len(signature) == 0 {
+	return signaturePacket(result.GetClearValue())
+}
+
+// signaturePacket decodes the SignResult a released sign request carries and returns its signature packet.
+func signaturePacket(clearValue []byte) ([]byte, error) {
+	var result openpgpv1.SignResult
+
+	err := proto.Unmarshal(clearValue, &result)
+	if err != nil {
+		return nil, fmt.Errorf("decoding the sign result: %w", err)
+	}
+
+	packet := result.GetSignaturePacket()
+	if len(packet) == 0 {
 		return nil, errNoSignature
 	}
 
-	return signature, nil
+	return packet, nil
 }

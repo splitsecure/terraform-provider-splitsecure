@@ -10,7 +10,7 @@ require (
 	github.com/hashicorp/terraform-plugin-go v0.31.0
 	github.com/hashicorp/terraform-plugin-log v0.11.0
 	github.com/hashicorp/terraform-plugin-testing v1.15.0
-	github.com/splitsecure/apis v0.0.0-20261117181126-4144087c3f6c
+	github.com/splitsecure/apis v0.0.0-20261117193316-c03e6daa3e5b
 	google.golang.org/protobuf v1.36.12
 )
 

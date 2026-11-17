@@ -189,8 +189,8 @@ github.com/skeema/knownhosts v1.3.1/go.mod h1:r7KTdC8l4uxWRyK2TpQZ/1o5HaSzh06ePQ
 github.com/spf13/cast v1.3.1/go.mod h1:Qx5cxh0v+4UWYiBimWS+eyWzqEqokIECu5etghLkUJE=
 github.com/spf13/cast v1.5.0 h1:rj3WzYc11XZaIZMPKmwP96zkFEnnAmV8s6XbB2aY32w=
 github.com/spf13/cast v1.5.0/go.mod h1:SpXXQ5YoyJw6s3/6cMTQuxvgRl3PCJiyaX9p6b155UU=
-github.com/splitsecure/apis v0.0.0-20261117181126-4144087c3f6c h1:9v6GdVzN2FbKpLLvmfYgkErVv0PQnupRAIXvXPqekpE=
-github.com/splitsecure/apis v0.0.0-20261117181126-4144087c3f6c/go.mod h1:xqT79sBCaF1MFSzgj2YA6C/6RaI/qVbrpsIckVpHJO4=
+github.com/splitsecure/apis v0.0.0-20261117193316-c03e6daa3e5b h1:K0sSGGjzaDNiAG0AqMWyw7yfMPyeyuPqWG3NIq4dk0s=
+github.com/splitsecure/apis v0.0.0-20261117193316-c03e6daa3e5b/go.mod h1:xqT79sBCaF1MFSzgj2YA6C/6RaI/qVbrpsIckVpHJO4=
 github.com/stretchr/objx v0.1.0/go.mod h1:HFkY916IF+rwdDfMAkV7OtwuqBVzrE8GR6GFx+wExME=
 github.com/stretchr/testify v1.2.2/go.mod h1:a8OnRcib4nhh0OaRAV+Yts87kKdq0PP7pXfy6kDkUVs=
 github.com/stretchr/testify v1.4.0/go.mod h1:j7eGeouHqKxXV5pUuKE4zz7dFj8WfuZ+81PSLYec5m4=
