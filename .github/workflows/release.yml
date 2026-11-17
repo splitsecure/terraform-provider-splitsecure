@@ -38,8 +38,46 @@ jobs:
       - name: Run GoReleaser
         uses: goreleaser/goreleaser-action@a4f02ab5355a589de60d917a659ce617ed19b3de # v7.3.0
         with:
-          args: release --draft --clean --skip=sign
+          args: release --draft --clean
         env:
           # GITHUB_TOKEN is auto-provided by the runner.
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GPG_FINGERPRINT: ${{ steps.import_gpg.outputs.fingerprint }}
+
+  # Signs SHA256SUMS with the SplitSecure release key, then publishes the
+  # draft. A quorum approves each signature.
+  sign:
+    needs: goreleaser
+    runs-on: ubuntu-latest
+    environment: release
+    timeout-minutes: 5
+    permissions:
+      contents: write
+      id-token: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: 'go.mod'
+          cache: true
+
+      - name: Sign and publish
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SPLITSECURE_ENDPOINT: ${{ vars.SPLITSECURE_ENDPOINT }}
+          SPLITSECURE_SERVICE_ACCOUNT: ${{ vars.SPLITSECURE_SERVICE_ACCOUNT }}
+          SPLITSECURE_VAULT_ID: ${{ vars.SPLITSECURE_VAULT_ID }}
+          RELEASE_SIGNING_KEY_ID: ${{ vars.RELEASE_SIGNING_KEY_ID }}
+        run: |
+          set -euo pipefail
+          gh release download "$GITHUB_REF_NAME" --pattern '*_SHA256SUMS'
+          sums="$(ls ./*_SHA256SUMS)"
+          go run ./cmd/sign-release \
+            -endpoint "$SPLITSECURE_ENDPOINT" \
+            -service-account "$SPLITSECURE_SERVICE_ACCOUNT" \
+            -vault "$SPLITSECURE_VAULT_ID" \
+            -key "$RELEASE_SIGNING_KEY_ID" \
+            -justification "Release $GITHUB_REF_NAME, commit ${GITHUB_SHA:0:12}, run $GITHUB_RUN_ID" \
+            -in "$sums" -out "$sums.sig"
+          gh release upload "$GITHUB_REF_NAME" "$sums.sig"
+          gh release edit "$GITHUB_REF_NAME" --draft=false

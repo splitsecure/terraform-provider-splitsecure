@@ -92,6 +92,30 @@ func AwaitDelete(ctx context.Context, c vaultusev1connect.VaultUseServiceClient,
 	return nil
 }
 
+// AwaitRelease returns the result of a use request, polling its ticket when the server did not answer inline.
+func AwaitRelease(ctx context.Context, c vaultusev1connect.VaultUseServiceClient, vaultID string, outcome *vaultusev1.ReleaseOutcome) (*vaultusev1.ReleaseResult, error) {
+	if result := outcome.GetResult(); result != nil {
+		return result, nil
+	}
+
+	ticket := outcome.GetTicket()
+	if ticket == nil {
+		return nil, errNoResult
+	}
+
+	resolved, err := pollUntilResolved(ctx, c, vaultID, ticket.GetTicketId())
+	if err != nil {
+		return nil, err
+	}
+
+	result := resolved.GetReleaseResult()
+	if result == nil {
+		return nil, fmt.Errorf("%w: %T", errUnexpectedResult, resolved.GetOutcome())
+	}
+
+	return result, nil
+}
+
 // verdictError marks a terminal ticket status, which needs no cancel.
 type verdictError struct{ err error }
 
