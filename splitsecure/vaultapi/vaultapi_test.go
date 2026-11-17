@@ -183,6 +183,61 @@ func TestAwaitDelete_Denied(t *testing.T) {
 	}
 }
 
+func TestAwaitRelease_InlineAndTicket(t *testing.T) {
+	t.Parallel()
+
+	c := vaultfake.New(t, vaultfake.Handlers{Use: &vaultfake.Use{
+		OnPollTicket: func(*vaultusev1.PollTicketRequest) (*vaultusev1.PollTicketResponse, error) {
+			return &vaultusev1.PollTicketResponse{Outcome: &vaultusev1.TicketOutcome{
+				Outcome: &vaultusev1.TicketOutcome_ReleaseResult{ReleaseResult: &vaultusev1.ReleaseResult{
+					Value: &vaultusev1.ReleaseResult_ClearValue{ClearValue: []byte("polled")},
+				}},
+			}}, nil
+		},
+	}})
+
+	inline := &vaultusev1.ReleaseOutcome{Union: &vaultusev1.ReleaseOutcome_Result{Result: &vaultusev1.ReleaseResult{
+		Value: &vaultusev1.ReleaseResult_ClearValue{ClearValue: []byte("inline")},
+	}}}
+
+	got, err := vaultapi.AwaitRelease(context.Background(), c.VaultUse, "vault-1", inline)
+	if err != nil {
+		t.Fatalf("inline AwaitRelease: %v", err)
+	}
+
+	if string(got.GetClearValue()) != "inline" {
+		t.Errorf("inline clear value = %q", got.GetClearValue())
+	}
+
+	ticket := &vaultusev1.ReleaseOutcome{Union: &vaultusev1.ReleaseOutcome_Ticket{Ticket: &vaultusev1.Ticket{TicketId: []byte("t1")}}}
+
+	got, err = vaultapi.AwaitRelease(context.Background(), c.VaultUse, "vault-1", ticket)
+	if err != nil {
+		t.Fatalf("ticket AwaitRelease: %v", err)
+	}
+
+	if string(got.GetClearValue()) != "polled" {
+		t.Errorf("polled clear value = %q", got.GetClearValue())
+	}
+}
+
+func TestAwaitRelease_Expired(t *testing.T) {
+	t.Parallel()
+
+	c := vaultfake.New(t, vaultfake.Handlers{Use: &vaultfake.Use{
+		OnPollTicket: func(*vaultusev1.PollTicketRequest) (*vaultusev1.PollTicketResponse, error) {
+			return pollStatus(&vaultusev1.TicketStatus{State: &vaultusev1.TicketStatus_Expired_{Expired: &vaultusev1.TicketStatus_Expired{}}}), nil
+		},
+	}})
+
+	ticket := &vaultusev1.ReleaseOutcome{Union: &vaultusev1.ReleaseOutcome_Ticket{Ticket: &vaultusev1.Ticket{TicketId: []byte("t1")}}}
+
+	_, err := vaultapi.AwaitRelease(context.Background(), c.VaultUse, "vault-1", ticket)
+	if !errors.Is(err, vaultapi.ErrExpired) {
+		t.Fatalf("err = %v, want ErrExpired", err)
+	}
+}
+
 var (
 	errGone    = errors.New("gone")
 	errRefused = errors.New("refused")
